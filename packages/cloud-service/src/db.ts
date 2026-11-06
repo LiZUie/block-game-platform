@@ -47,6 +47,7 @@ export function initDatabase() {
       entities_json TEXT NOT NULL,
       logic_json TEXT NOT NULL,
       blockly_xml TEXT,
+      project_data_json TEXT,
       is_published INTEGER NOT NULL DEFAULT 1,
       play_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -54,6 +55,13 @@ export function initDatabase() {
       FOREIGN KEY (author_id) REFERENCES users(id)
     );
   `);
+
+  // Migration: pastikan kolom project_data_json ada jika database sudah ada sebelumnya
+  try {
+    db.exec(`ALTER TABLE games ADD COLUMN project_data_json TEXT;`);
+  } catch {
+    // Abaikan jika kolom sudah ada
+  }
 
   // 3. Scores / Leaderboards Table
   db.exec(`
@@ -80,10 +88,42 @@ export function initDatabase() {
     );
   `);
 
+  // Ensure user_guest exists
+  db.exec(`
+    INSERT OR IGNORE INTO users (id, username, email, password_hash, role, status, created_at)
+    VALUES ('user_guest', 'GuestPlayer', 'guest@blockgame.cloud', 'guest_pwd', 'PLAYER', 'ACTIVE', datetime('now'));
+  `);
+
   seedInitialData();
 }
 
 function seedInitialData() {
+  // Ensure game 1 (Space Invaders preset) exists
+  const hasGame1 = db.prepare('SELECT id FROM games WHERE id = ?').get('1');
+  if (!hasGame1) {
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO games (
+        id, title, description, author_id, author_name, category,
+        canvas_json, entities_json, logic_json, blockly_xml, project_data_json,
+        is_published, play_count, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 10, ?, ?)
+    `).run(
+      '1',
+      'Space Invaders 2D (BlockVerse Official)',
+      'Game tembak-menembak pesawat luar angkasa dengan Blockly Zelos & 60 FPS Coroutine Runtime.',
+      'user_dev_01',
+      'RetroCoder',
+      'arcade',
+      JSON.stringify({ width: 480, height: 360, backgroundColor: '#090d16' }),
+      JSON.stringify([]),
+      JSON.stringify({ type: 'BLOCKVERSE' }),
+      '',
+      null,
+      now,
+      now
+    );
+  }
   // Check users count
   const userCount = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0;
   

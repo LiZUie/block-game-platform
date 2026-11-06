@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { GameManifest, BlockNode, EntityConfig } from '@blockgame/shared';
 import { api } from '../services/api';
 import { GameRunner } from '../engine/GameRunner';
+import { DeveloperStudio } from '../components/DeveloperStudio';
 import { 
   Play, Square, UploadCloud, CheckCircle2, 
   Trash2, Plus, Volume2, Sparkles, 
@@ -11,6 +12,7 @@ import {
 
 interface StudioViewProps {
   onGamePublished: (gameId: string) => void;
+  onBack?: () => void;
 }
 
 type BlockCategory = 'events' | 'motion' | 'looks' | 'sound' | 'control' | 'sensing' | 'variables';
@@ -67,8 +69,9 @@ const SNAKE_SPRITES: EntityConfig[] = [
   { id: 'entity_trap', name: 'Duri Pinggir', type: 'hazard', shape: 'square', color: '#64748B', size: { width: 20, height: 20 }, initialPosition: { x: 300, y: 100 }, isSolid: false }
 ];
 
-export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
+export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished, onBack }) => {
   const { user } = useAuth();
+  const [studioMode, setStudioMode] = useState<'blockly' | 'classic'>('blockly');
 
   // Template State
   const [selectedTemplate, setSelectedTemplate] = useState<'adventure' | 'puzzle' | 'snake'>('adventure');
@@ -305,6 +308,22 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
     }
   };
 
+  if (studioMode === 'blockly') {
+    return (
+      <div className="relative w-full h-[calc(100vh-4rem)] flex flex-col">
+        <div className="absolute top-2.5 right-48 z-30">
+          <button
+            onClick={() => setStudioMode('classic')}
+            className="text-[11px] font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/30 px-3 py-1 rounded-md transition backdrop-blur-sm"
+          >
+            Switch to Classic Editor
+          </button>
+        </div>
+        <DeveloperStudio onBack={onBack} onGamePublished={onGamePublished} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#E9EEF2] text-slate-800 font-sans select-none overflow-hidden">
       
@@ -344,6 +363,16 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Switch to Scratch 3.0 Blockly */}
+          <button
+            type="button"
+            onClick={() => setStudioMode('blockly')}
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400 shadow-sm transition"
+          >
+            <Sparkles size={14} className="text-amber-300" />
+            <span>Blockly Zelos (Scratch 3.0)</span>
+          </button>
+
           {/* Guide Toggle */}
           <button
             type="button"

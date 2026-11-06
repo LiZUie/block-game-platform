@@ -88,7 +88,7 @@ const MainApp: React.FC = () => {
         onNavigate={(view) => setCurrentView(view)}
       />
 
-      <main className="flex-1 pb-16">
+      <main className={`flex-1 ${currentView === 'studio' ? 'pb-0' : 'pb-16'}`}>
         {currentView === 'catalog' && (
           <CatalogView
             onPlayGame={handlePlayGame}
@@ -105,6 +105,7 @@ const MainApp: React.FC = () => {
 
         {currentView === 'studio' && (
           <StudioView
+            onBack={() => setCurrentView('catalog')}
             onGamePublished={handleGamePublished}
           />
         )}
@@ -114,20 +115,22 @@ const MainApp: React.FC = () => {
         )}
       </main>
 
-      <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div>
-            <strong>BlockVerse 2D Cloud</strong> • Ekosistem Service Cloud Game UGC Berbasis Block Programming
+      {currentView !== 'studio' && (
+        <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-500">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div>
+              <strong>BlockVerse 2D Cloud</strong> • Ekosistem Service Cloud Game UGC Berbasis Block Programming
+            </div>
+            <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
+              <span>1. Cloud Service</span>
+              <span>→</span>
+              <span>2. Block Studio</span>
+              <span>→</span>
+              <span>3. Player Client</span>
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
-            <span>1. Cloud Service</span>
-            <span>→</span>
-            <span>2. Block Studio</span>
-            <span>→</span>
-            <span>3. Player Client</span>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 };

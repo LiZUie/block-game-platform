@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { GameManifest, LeaderboardEntry } from '@blockgame/shared';
 import { GameRunner } from '../engine/GameRunner';
+import { PlayerRunner } from '../components/PlayerRunner';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, RotateCcw, Trophy, Play, Pause, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Share2, Sparkles, CheckCircle2 } from 'lucide-react';
 
@@ -125,6 +126,26 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ gameId, onBackToCatalog 
         >
           Kembali ke Katalog
         </button>
+      </div>
+    );
+  }
+
+  // Jika game memiliki manifest projectData Blockly atau ID '1' Space Invaders, jalankan BlockVerse PlayerRunner 60 FPS
+  if ((manifest as any)?.projectData || gameId === '1') {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-4 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <button
+            onClick={onBackToCatalog}
+            className="flex items-center gap-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl transition"
+          >
+            <ArrowLeft className="w-4 h-4" /> Kembali ke Katalog
+          </button>
+          <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+            <span>● 60 FPS BlockVerse Engine Active</span>
+          </div>
+        </div>
+        <PlayerRunner gameId={gameId} />
       </div>
     );
   }
