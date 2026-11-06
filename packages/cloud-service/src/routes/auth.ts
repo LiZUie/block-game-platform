@@ -6,7 +6,7 @@ import { UserRole, UserProfile, AccountStatus } from '@blockgame/shared';
 
 const router = Router();
 
-// Login (Mendukung Login via Username ATAU Email)
+// Login (Mendukung Login via Username ATAU Email, serta alias 'admin')
 router.post('/login', (req: Request, res: Response) => {
   const { username, email, password } = req.body;
   const loginIdentifier = username || email;
@@ -15,8 +15,11 @@ router.post('/login', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Username/Email dan password wajib diisi' });
   }
 
-  const stmt = db.prepare('SELECT * FROM users WHERE email = ? OR username = ?');
-  const user = stmt.get(loginIdentifier, loginIdentifier) as any;
+  const stmt = db.prepare(`
+    SELECT * FROM users 
+    WHERE email = ? OR username = ? OR (username = 'CloudAdmin' AND LOWER(?) = 'admin')
+  `);
+  const user = stmt.get(loginIdentifier, loginIdentifier, loginIdentifier) as any;
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Username/Email atau password salah' });
@@ -46,7 +49,9 @@ router.post('/register', (req: Request, res: Response) => {
   // Cek apakah user/email sudah ada
   const existing = db.prepare('SELECT id FROM users WHERE email = ? OR username = ?').get(email, username);
   if (existing) {
-    return res.status(409).json({ error: 'Email atau username sudah terdaftar' });
+    return res.status(409).json({ 
+      error: 'Email atau username sudah terdaftar. Silakan buka tab Masuk (Login) untuk mengecek status permohonan atau masuk ke akun Anda.' 
+    });
   }
 
   // Developer yang baru mendaftar default statusnya 'PENDING' (perlu approval Admin)

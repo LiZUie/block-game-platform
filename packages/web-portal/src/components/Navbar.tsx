@@ -80,27 +80,21 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
             <span>Katalog Game</span>
           </button>
 
-          {/* Sisi 2: Developer Studio (Hanya untuk Dev & Admin) */}
-          <button
-            onClick={() => onNavigate('studio')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-              currentView === 'studio'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : user?.role === UserRole.PLAYER
-                ? 'text-slate-600 cursor-not-allowed hover:bg-transparent'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-            title={user?.role === UserRole.PLAYER ? 'Hanya Developer & Admin yang bisa membuka Studio' : 'Buat Game Baru'}
-          >
-            <Code2 size={16} />
-            <span>Studio Blok 2D</span>
-            {user?.role === UserRole.PLAYER && (
-              <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded font-mono">LOCKED</span>
-            )}
-            {user?.role === UserRole.DEVELOPER && user?.status === 'PENDING' && (
-              <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">PENDING</span>
-            )}
-          </button>
+          {/* Sisi 2: Developer Studio (Hanya untuk Developer Aktif & Admin, User/Player tidak ditampilkan) */}
+          {(user?.role === UserRole.DEVELOPER || user?.role === UserRole.ADMIN) && (
+            <button
+              onClick={() => onNavigate('studio')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                currentView === 'studio'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+              title="Buka Scratch Studio 2D"
+            >
+              <Code2 size={16} />
+              <span>Studio Blok 2D</span>
+            </button>
+          )}
 
           {/* Sisi 1: Cloud Service Admin (Hanya untuk Admin) */}
           {user?.role === UserRole.ADMIN && (

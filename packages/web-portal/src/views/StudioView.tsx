@@ -1,14 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { UserRole, GameManifest, BlockNode, EntityConfig } from '@blockgame/shared';
+import { GameManifest, BlockNode, EntityConfig } from '@blockgame/shared';
 import { api } from '../services/api';
 import { GameRunner } from '../engine/GameRunner';
 import { 
   Play, Square, UploadCloud, CheckCircle2, 
-  Trash2, Plus, RefreshCw, Volume2, 
-  MousePointer, Zap, Compass, Sparkles, 
-  Eye, EyeOff, Layers, Code, Flag, Settings2,
-  Clock, AlertCircle, ShieldCheck
+  Trash2, Plus, Volume2, Sparkles, 
+  Code, Flag, HelpCircle, RotateCcw, Info
 } from 'lucide-react';
 
 interface StudioViewProps {
@@ -27,9 +25,54 @@ interface ScratchBlockItem {
   shape: 'hat' | 'stack' | 'cap';
 }
 
+// === PRESET TEMPLATES DATA ===
+const ADVENTURE_SPRITES: EntityConfig[] = [
+  { id: 'entity_hero', name: 'Hero (Ksatria)', type: 'player', shape: 'square', color: '#0284C7', size: { width: 20, height: 20 }, initialPosition: { x: 40, y: 40 }, isSolid: false },
+  { id: 'entity_key', name: 'Kunci Gerbang', type: 'key', shape: 'diamond', color: '#FACC15', size: { width: 20, height: 20 }, initialPosition: { x: 340, y: 40 }, isSolid: false },
+  { id: 'entity_door', name: 'Pintu Gerbang', type: 'door', shape: 'door', color: '#9333EA', size: { width: 20, height: 20 }, initialPosition: { x: 340, y: 340 }, isSolid: false },
+  { id: 'entity_chest', name: 'Peti Harta Karun', type: 'treasure', shape: 'star', color: '#F59E0B', size: { width: 20, height: 20 }, initialPosition: { x: 40, y: 340 }, isSolid: false },
+  { id: 'entity_trap', name: 'Jebakan Duri', type: 'hazard', shape: 'square', color: '#EF4444', size: { width: 20, height: 20 }, initialPosition: { x: 200, y: 140 }, isSolid: false }
+];
+
+const ADVENTURE_BLOCKS: ScratchBlockItem[] = [
+  { id: 'b1', category: 'events', text: 'ketika 🏁 bendera diklik', color: '#FFBF00', type: 'WHEN_GAME_START', params: {}, shape: 'hat' },
+  { id: 'b2', category: 'variables', text: 'atur [Skor] ke (0)', color: '#FF8C1A', type: 'SET_VARIABLE', params: { name: 'score', value: 0 }, shape: 'stack' },
+  { id: 'b3', category: 'events', text: 'ketika tombol [Panah / WASD] ditekan', color: '#FFBF00', type: 'WHEN_KEY_PRESSED', params: {}, shape: 'hat' },
+  { id: 'b4', category: 'motion', text: 'gerak karakter (1) petak di grid', color: '#4C97FF', type: 'MOVE_ENTITY', params: { mode: 'STEP_4WAY' }, shape: 'stack' },
+  { id: 'b5', category: 'events', text: 'ketika menyentuh [Kunci Gerbang]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_key' }, shape: 'hat' },
+  { id: 'b6', category: 'variables', text: 'tambah [Skor] sebesar (50)', color: '#FF8C1A', type: 'ADD_SCORE', params: { amount: 50 }, shape: 'stack' },
+  { id: 'b7', category: 'looks', text: 'sembunyikan [Kunci Gerbang]', color: '#9966FF', type: 'DESTROY_ENTITY', params: { entityId: 'entity_key' }, shape: 'stack' },
+  { id: 'b8', category: 'sound', text: 'bunyikan suara [ambil kunci]', color: '#CF63CF', type: 'PLAY_SOUND', params: { sound: 'key' }, shape: 'stack' },
+  { id: 'b9', category: 'events', text: 'ketika menyentuh [Peti Harta Karun]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_chest' }, shape: 'hat' },
+  { id: 'b10', category: 'variables', text: 'tambah [Skor] sebesar (100)', color: '#FF8C1A', type: 'ADD_SCORE', params: { amount: 100 }, shape: 'stack' },
+  { id: 'b11', category: 'looks', text: 'sembunyikan [Peti Harta Karun]', color: '#9966FF', type: 'DESTROY_ENTITY', params: { entityId: 'entity_chest' }, shape: 'stack' },
+  { id: 'b12', category: 'sound', text: 'bunyikan suara [koin emas]', color: '#CF63CF', type: 'PLAY_SOUND', params: { sound: 'coin' }, shape: 'stack' },
+  { id: 'b13', category: 'events', text: 'ketika menyentuh [Pintu Gerbang]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_door' }, shape: 'hat' },
+  { id: 'b14', category: 'control', text: 'menang level! [🏆 Selamat Kamu Berhasil Kabur!]', color: '#FFAB19', type: 'WIN_GAME', params: { message: 'Selamat! Kamu berhasil membuka gerbang dan kabur dari labirin!' }, shape: 'cap' },
+  { id: 'b15', category: 'events', text: 'ketika menyentuh [Jebakan Duri]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_trap' }, shape: 'hat' },
+  { id: 'b16', category: 'control', text: 'game over [💀 Kamu terkena jebakan duri!]', color: '#FFAB19', type: 'GAME_OVER', params: { message: 'Terkena jebakan duri!' }, shape: 'cap' }
+];
+
+const PUZZLE_SPRITES: EntityConfig[] = [
+  { id: 'entity_hero', name: 'Hero Penjelajah', type: 'player', shape: 'square', color: '#0284C7', size: { width: 20, height: 20 }, initialPosition: { x: 40, y: 40 }, isSolid: false },
+  { id: 'entity_key', name: 'Saklar Daya', type: 'key', shape: 'diamond', color: '#06B6D4', size: { width: 20, height: 20 }, initialPosition: { x: 340, y: 40 }, isSolid: false },
+  { id: 'entity_door', name: 'Portal Keluar', type: 'door', shape: 'door', color: '#10B981', size: { width: 20, height: 20 }, initialPosition: { x: 340, y: 340 }, isSolid: false },
+  { id: 'entity_chest', name: 'Kristal Energi', type: 'treasure', shape: 'star', color: '#8B5CF6', size: { width: 20, height: 20 }, initialPosition: { x: 40, y: 340 }, isSolid: false },
+  { id: 'entity_trap', name: 'Penghalang Laser', type: 'hazard', shape: 'square', color: '#F43F5E', size: { width: 20, height: 20 }, initialPosition: { x: 200, y: 140 }, isSolid: false }
+];
+
+const SNAKE_SPRITES: EntityConfig[] = [
+  { id: 'entity_hero', name: 'Kepala Ular', type: 'player', shape: 'square', color: '#10B981', size: { width: 20, height: 20 }, initialPosition: { x: 100, y: 100 }, isSolid: false },
+  { id: 'entity_chest', name: 'Apel Merah', type: 'treasure', shape: 'star', color: '#EF4444', size: { width: 20, height: 20 }, initialPosition: { x: 200, y: 200 }, isSolid: false },
+  { id: 'entity_trap', name: 'Duri Pinggir', type: 'hazard', shape: 'square', color: '#64748B', size: { width: 20, height: 20 }, initialPosition: { x: 300, y: 100 }, isSolid: false }
+];
+
 export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
-  const { user, refreshUser } = useAuth();
-  const [checkingStatus, setCheckingStatus] = useState(false);
+  const { user } = useAuth();
+
+  // Template State
+  const [selectedTemplate, setSelectedTemplate] = useState<'adventure' | 'puzzle' | 'snake'>('adventure');
+  const [showGuide, setShowGuide] = useState(true);
 
   // Active Category on Left Palette
   const [activeCategory, setActiveCategory] = useState<BlockCategory>('events');
@@ -47,156 +90,13 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
   const [publishSuccess, setPublishSuccess] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
 
-  // Sprites List (Karakter Orang, Kunci, Pintu, Harta, Duri)
-  const [sprites, setSprites] = useState<EntityConfig[]>([
-    {
-      id: 'entity_hero',
-      name: 'Hero (Ksatria)',
-      type: 'player',
-      shape: 'square',
-      color: '#0284C7',
-      size: { width: 20, height: 20 },
-      initialPosition: { x: 40, y: 40 },
-      isSolid: false
-    },
-    {
-      id: 'entity_key',
-      name: 'Kunci Gerbang',
-      type: 'key',
-      shape: 'diamond',
-      color: '#FACC15',
-      size: { width: 20, height: 20 },
-      initialPosition: { x: 340, y: 40 },
-      isSolid: false
-    },
-    {
-      id: 'entity_door',
-      name: 'Pintu Gerbang',
-      type: 'door',
-      shape: 'door',
-      color: '#9333EA',
-      size: { width: 20, height: 20 },
-      initialPosition: { x: 340, y: 340 },
-      isSolid: false
-    },
-    {
-      id: 'entity_chest',
-      name: 'Peti Harta Karun',
-      type: 'treasure',
-      shape: 'star',
-      color: '#F59E0B',
-      size: { width: 20, height: 20 },
-      initialPosition: { x: 40, y: 340 },
-      isSolid: false
-    },
-    {
-      id: 'entity_trap',
-      name: 'Jebakan Duri',
-      type: 'hazard',
-      shape: 'square',
-      color: '#EF4444',
-      size: { width: 20, height: 20 },
-      initialPosition: { x: 200, y: 140 },
-      isSolid: false
-    }
-  ]);
-
+  // Sprites List
+  const [sprites, setSprites] = useState<EntityConfig[]>(ADVENTURE_SPRITES);
   const [selectedSpriteId, setSelectedSpriteId] = useState('entity_hero');
   const selectedSprite = sprites.find(s => s.id === selectedSpriteId) || sprites[0];
 
-  // Active Script Blocks in Workspace (Scratch-like Stacks)
-  const [workspaceBlocks, setWorkspaceBlocks] = useState<ScratchBlockItem[]>([
-    {
-      id: 'b1',
-      category: 'events',
-      text: 'ketika 🏁 bendera diklik',
-      color: '#FFBF00',
-      type: 'WHEN_GAME_START',
-      params: {},
-      shape: 'hat'
-    },
-    {
-      id: 'b2',
-      category: 'variables',
-      text: 'atur [Skor] ke (0)',
-      color: '#FF8C1A',
-      type: 'SET_VARIABLE',
-      params: { name: 'score', value: 0 },
-      shape: 'stack'
-    },
-    {
-      id: 'b3',
-      category: 'events',
-      text: 'ketika tombol [Panah / WASD] ditekan',
-      color: '#FFBF00',
-      type: 'WHEN_KEY_PRESSED',
-      params: {},
-      shape: 'hat'
-    },
-    {
-      id: 'b4',
-      category: 'motion',
-      text: 'gerak karakter (1) petak di grid',
-      color: '#4C97FF',
-      type: 'MOVE_ENTITY',
-      params: { mode: 'STEP_4WAY' },
-      shape: 'stack'
-    },
-    {
-      id: 'b5',
-      category: 'events',
-      text: 'ketika menyentuh [Kunci Gerbang]',
-      color: '#FFBF00',
-      type: 'ON_COLLISION',
-      params: { entityB: 'entity_key' },
-      shape: 'hat'
-    },
-    {
-      id: 'b6',
-      category: 'variables',
-      text: 'tambah [Skor] sebesar (50)',
-      color: '#FF8C1A',
-      type: 'ADD_SCORE',
-      params: { amount: 50 },
-      shape: 'stack'
-    },
-    {
-      id: 'b7',
-      category: 'looks',
-      text: 'sembunyikan [Kunci Gerbang]',
-      color: '#9966FF',
-      type: 'DESTROY_ENTITY',
-      params: { entityId: 'entity_key' },
-      shape: 'stack'
-    },
-    {
-      id: 'b8',
-      category: 'sound',
-      text: 'bunyikan suara [koin emas]',
-      color: '#CF63CF',
-      type: 'PLAY_SOUND',
-      params: { sound: 'key' },
-      shape: 'stack'
-    },
-    {
-      id: 'b9',
-      category: 'events',
-      text: 'ketika menyentuh [Pintu Gerbang]',
-      color: '#FFBF00',
-      type: 'ON_COLLISION',
-      params: { entityB: 'entity_door' },
-      shape: 'hat'
-    },
-    {
-      id: 'b10',
-      category: 'control',
-      text: 'menang level! [🏆 Selamat Kamu Berhasil Kabur!]',
-      color: '#FFAB19',
-      type: 'WIN_GAME',
-      params: { message: 'Selamat! Kamu berhasil membuka gerbang dan kabur dari labirin!' },
-      shape: 'cap'
-    }
-  ]);
+  // Active Script Blocks in Workspace
+  const [workspaceBlocks, setWorkspaceBlocks] = useState<ScratchBlockItem[]>(ADVENTURE_BLOCKS);
 
   // Stage Simulator Canvas
   const stageCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -237,6 +137,49 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
     { id: 'p_var_3', category: 'variables', text: 'tambah [Skor] sebesar (100)', color: '#FF8C1A', type: 'ADD_SCORE', params: { amount: 100 }, shape: 'stack' }
   ];
 
+  // Function to switch game template
+  const handleLoadTemplate = (tmpl: 'adventure' | 'puzzle' | 'snake') => {
+    setSelectedTemplate(tmpl);
+    if (tmpl === 'adventure') {
+      setProjectTitle('Petualangan Kesatria 2D');
+      setProjectDesc('Kumpulkan kunci dan harta karun, hindari duri, lalu keluar melalui gerbang!');
+      setSprites(ADVENTURE_SPRITES);
+      setWorkspaceBlocks([...ADVENTURE_BLOCKS]);
+    } else if (tmpl === 'puzzle') {
+      setProjectTitle('Teka-Teki Saklar Ruang 2D');
+      setProjectDesc('Sentuh saklar target untuk membuka portal keluar dan selesaikan teka-teki labirin!');
+      setSprites(PUZZLE_SPRITES);
+      setWorkspaceBlocks([...ADVENTURE_BLOCKS]);
+    } else {
+      setProjectTitle('Arcade Ular Klasik 2D');
+      setProjectDesc('Kendalikan karakter untuk mengambil item dan dapatkan skor tertinggi!');
+      setSprites(SNAKE_SPRITES);
+      setWorkspaceBlocks([
+        { id: 'sb1', category: 'events', text: 'ketika 🏁 bendera diklik', color: '#FFBF00', type: 'WHEN_GAME_START', params: {}, shape: 'hat' },
+        { id: 'sb2', category: 'variables', text: 'atur [Skor] ke (0)', color: '#FF8C1A', type: 'SET_VARIABLE', params: { name: 'score', value: 0 }, shape: 'stack' },
+        { id: 'sb3', category: 'events', text: 'ketika tombol [Panah / WASD] ditekan', color: '#FFBF00', type: 'WHEN_KEY_PRESSED', params: {}, shape: 'hat' },
+        { id: 'sb4', category: 'motion', text: 'gerak karakter (1) petak di grid', color: '#4C97FF', type: 'MOVE_ENTITY', params: { mode: 'STEP_4WAY' }, shape: 'stack' },
+        { id: 'sb5', category: 'events', text: 'ketika menyentuh [Peti Harta Karun]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_chest' }, shape: 'hat' },
+        { id: 'sb6', category: 'variables', text: 'tambah [Skor] sebesar (50)', color: '#FF8C1A', type: 'ADD_SCORE', params: { amount: 50 }, shape: 'stack' },
+        { id: 'sb7', category: 'sound', text: 'bunyikan suara [koin emas]', color: '#CF63CF', type: 'PLAY_SOUND', params: { sound: 'coin' }, shape: 'stack' },
+        { id: 'sb8', category: 'events', text: 'ketika menyentuh [Jebakan Duri]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_trap' }, shape: 'hat' },
+        { id: 'sb9', category: 'control', text: 'game over [💀 Menabrak Duri!]', color: '#FFAB19', type: 'GAME_OVER', params: { message: 'Menabrak rintangan!' }, shape: 'cap' }
+      ]);
+    }
+    setSelectedSpriteId('entity_hero');
+  };
+
+  const handleResetDefaultBlocks = () => {
+    if (selectedTemplate === 'adventure') {
+      setWorkspaceBlocks([...ADVENTURE_BLOCKS]);
+    } else if (selectedTemplate === 'puzzle') {
+      setWorkspaceBlocks([...ADVENTURE_BLOCKS]);
+    } else {
+      handleLoadTemplate('snake');
+    }
+    setSelectedSpriteId('entity_hero');
+  };
+
   // Build GameManifest from current studio state
   const buildCurrentManifest = (): GameManifest => {
     // Maze stone walls
@@ -253,7 +196,6 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
     // Convert workspace blocks into valid GameLogicAST
     const logicBlocks: BlockNode[] = [];
 
-    // Group blocks by hat events
     let currentHat: BlockNode | null = null;
     for (const b of workspaceBlocks) {
       if (b.shape === 'hat') {
@@ -278,14 +220,14 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
       authorId: user?.id || 'dev',
       authorName: user?.username || 'Developer',
       version: '1.0.0',
-      category: 'adventure',
+      category: selectedTemplate === 'snake' ? 'classic' : selectedTemplate,
       canvas: {
         width: canvasWidth,
         height: canvasHeight,
         gridSize: gridSize,
         backgroundColor: '#090d16',
         tickRateMs: 0,
-        gameMode: 'adventure'
+        gameMode: selectedTemplate === 'snake' ? 'snake' : 'adventure'
       },
       entities: allEntities,
       logic: { version: '1.0', blocks: logicBlocks },
@@ -322,7 +264,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
     return () => {
       if (runnerRef.current) runnerRef.current.destroy();
     };
-  }, [sprites]);
+  }, [sprites, workspaceBlocks.length, selectedTemplate]);
 
   // Add block from palette to workspace
   const handleAddBlock = (block: ScratchBlockItem) => {
@@ -338,7 +280,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
     setWorkspaceBlocks(prev => prev.filter(b => b.id !== id));
   };
 
-  // Publish Game to Cloud Service
+  // Publish Game
   const handlePublish = async () => {
     try {
       setIsPublishing(true);
@@ -363,92 +305,6 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
     }
   };
 
-  if (user?.role === UserRole.DEVELOPER && user?.status === 'PENDING') {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center shadow-xl shadow-amber-500/10">
-          <Clock size={40} className="animate-spin" style={{ animationDuration: '6s' }} />
-        </div>
-        
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider font-mono">
-            Status Akun: Menunggu Approval (Pending)
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-black text-white">
-            Akun Developer Anda Belum Disetujui
-          </h2>
-          <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
-            Halo <strong>{user.username}</strong>! Pendaftaran akun Developer Anda telah berhasil disimpan di Cloud Service. Namun, untuk menjaga keamanan dan standar platform game, akun Developer baru memerlukan <strong>persetujuan (approval) dari Cloud Admin</strong> sebelum dapat membuat dan mempublikasikan game.
-          </p>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 max-w-md mx-auto text-left space-y-2 text-xs">
-          <div className="font-bold text-slate-200 flex items-center gap-2">
-            <ShieldCheck size={16} className="text-indigo-400" />
-            <span>Alur Verifikasi Cloud Service:</span>
-          </div>
-          <ol className="list-decimal list-inside space-y-1 text-slate-400 pl-1">
-            <li>Admin menerima permohonan Anda di portal <strong>Cloud Admin</strong>.</li>
-            <li>Admin memverifikasi dan menyetujui akun developer Anda.</li>
-            <li>Setelah disetujui, editor Scratch Studio otomatis aktif sepenuhnya!</li>
-          </ol>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-          <button
-            onClick={async () => {
-              setCheckingStatus(true);
-              const updated = await refreshUser();
-              setCheckingStatus(false);
-              if (updated?.status === 'ACTIVE') {
-                alert('Selamat! Akun Developer Anda telah disetujui Admin. Studio siap digunakan!');
-              } else {
-                alert('Status akun saat ini masih PENDING. Harap tunggu persetujuan Admin.');
-              }
-            }}
-            disabled={checkingStatus}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-extrabold text-sm px-5 py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all"
-          >
-            <RefreshCw size={16} className={checkingStatus ? 'animate-spin' : ''} />
-            <span>{checkingStatus ? 'Memeriksa...' : 'Cek Status Persetujuan Sekarang'}</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (user?.status === 'REJECTED') {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-rose-500/10 border-2 border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center">
-          <AlertCircle size={40} />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-white">Permohonan Developer Ditolak</h2>
-          <p className="text-sm text-slate-400 max-w-md mx-auto">
-            Halo <strong>{user?.username}</strong>, permohonan akun developer Anda saat ini ditolak oleh Administrator. Silakan hubungi admin atau gunakan akun Player untuk bermain.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (user?.role === UserRole.PLAYER) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-slate-800 border-2 border-slate-700 text-slate-400 mx-auto flex items-center justify-center">
-          <Code size={40} />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-white">Akses Studio Terkunci</h2>
-          <p className="text-sm text-slate-400 max-w-md mx-auto">
-            Halaman Scratch Studio khusus untuk akun <strong>Developer</strong> dan <strong>Admin</strong>. Anda saat ini login sebagai Player.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#E9EEF2] text-slate-800 font-sans select-none overflow-hidden">
       
@@ -467,17 +323,44 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
             type="text"
             value={projectTitle}
             onChange={(e) => setProjectTitle(e.target.value)}
-            className="bg-[#3373CC] hover:bg-[#285EA8] focus:bg-white focus:text-slate-900 border border-transparent focus:border-white text-xs font-bold px-3 py-1.5 rounded-md transition-all outline-none w-56 sm:w-64"
+            className="bg-[#3373CC] hover:bg-[#285EA8] focus:bg-white focus:text-slate-900 border border-transparent focus:border-white text-xs font-bold px-3 py-1.5 rounded-md transition-all outline-none w-48 sm:w-60"
             placeholder="Judul Proyek Game"
           />
+
+          {/* Template Preset Selector */}
+          <div className="hidden md:flex items-center gap-1.5 bg-[#3373CC] px-2 py-1 rounded-lg border border-blue-300/30">
+            <span className="text-[11px] font-bold text-blue-200">Preset:</span>
+            <select
+              value={selectedTemplate}
+              onChange={(e) => handleLoadTemplate(e.target.value as any)}
+              className="bg-transparent text-white text-xs font-bold outline-none cursor-pointer"
+            >
+              <option value="adventure" className="text-slate-900">🏰 Petualangan Ksatria (Dungeon)</option>
+              <option value="puzzle" className="text-slate-900">🧩 Teka-Teki Saklar (Puzzle)</option>
+              <option value="snake" className="text-slate-900">🐍 Arcade Ular Klasik (Snake)</option>
+            </select>
+          </div>
         </div>
 
-        {/* Publish & Share to Cloud */}
+        {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Guide Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowGuide(!showGuide)}
+            className={`flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-all border ${
+              showGuide ? 'bg-amber-400 text-slate-900 border-amber-300 shadow-sm' : 'bg-[#3373CC] text-white border-blue-300/40 hover:bg-[#285EA8]'
+            }`}
+          >
+            <HelpCircle size={14} />
+            <span>{showGuide ? 'Tutup Panduan' : 'Panduan Bikin Game'}</span>
+          </button>
+
+          {/* Publish & Share to Cloud */}
           <button
             onClick={handlePublish}
             disabled={isPublishing || publishSuccess}
-            className="flex items-center gap-1.5 bg-[#FFAB19] hover:bg-[#E69915] active:bg-[#CC8810] text-slate-900 font-black text-xs px-3.5 py-1.5 rounded-lg shadow-sm transition-all"
+            className="flex items-center gap-1.5 bg-[#FFAB19] hover:bg-[#E69915] active:bg-[#CC8810] text-slate-900 font-black text-xs px-4 py-1.5 rounded-lg shadow-sm transition-all"
           >
             {publishSuccess ? (
               <>
@@ -548,13 +431,13 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
           </button>
         </div>
 
-        {/* === KOLOM 2: PALET BLOK PUZZLE (DRAWER) === */}
-        <div className="w-64 bg-[#F9FAFB] border-r border-slate-300 p-3 overflow-y-auto space-y-2 shrink-0">
-          <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 px-1">
+        {/* === KOLOM 2: LACI BLOK (BLOCK PALETTE DRAWER) === */}
+        <div className="w-64 bg-[#F9F9F9] border-r border-slate-300 flex flex-col p-3 overflow-y-auto shrink-0 select-none">
+          <div className="text-[11px] font-black uppercase text-slate-500 mb-3 px-1 tracking-wider">
             Koleksi Blok ({activeCategory.toUpperCase()})
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {availablePaletteBlocks
               .filter(b => b.category === activeCategory)
               .map((block) => (
@@ -565,7 +448,6 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
                   className="group relative cursor-pointer px-3 py-2 rounded-xl text-white text-xs font-bold shadow-sm hover:brightness-110 active:scale-95 transition-all select-none border-t border-white/20 border-b border-black/20 flex items-center justify-between"
                   title="Klik untuk menambahkan blok ini ke workspace"
                 >
-                  {/* Puzzle Notch Representation */}
                   <div className="flex items-center gap-1.5">
                     {block.shape === 'hat' && <Flag size={12} className="text-white shrink-0" />}
                     <span>{block.text}</span>
@@ -575,50 +457,156 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
               ))}
           </div>
 
-          <div className="pt-4 border-t border-slate-200 text-[10px] text-slate-400 text-center">
-            💡 <em>Klik blok di atas untuk menambahkan ke lembar kerja script</em>
+          <div className="pt-4 mt-auto border-t border-slate-200 text-[10px] text-slate-400 text-center">
+            💡 <em>Klik blok di atas untuk menambahkan ke lembar kerja skrip</em>
           </div>
         </div>
 
         {/* === KOLOM 3: SCRIPT WORKSPACE (LEMBAR KERJA SUSUNAN BLOK) === */}
-        <div className="flex-1 bg-white relative overflow-y-auto p-6 flex flex-col">
-          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-              <Code size={16} className="text-indigo-600" />
-              <span>Area Skrip Pemrograman Blok untuk: <strong className="text-indigo-600">{selectedSprite.name}</strong></span>
-            </div>
-            <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-2 py-1 rounded">
-              {workspaceBlocks.length} Blok Tersusun
-            </span>
-          </div>
-
-          {/* Canvas Workspace Blocks Stack */}
-          <div className="space-y-1 max-w-xl pb-10">
-            {workspaceBlocks.map((block, idx) => (
-              <div
-                key={block.id}
-                style={{ backgroundColor: block.color }}
-                className={`group relative text-white text-xs font-bold px-4 py-2.5 rounded-lg shadow-sm border-t border-white/25 border-b border-black/20 flex items-center justify-between transition-all ${
-                  block.shape === 'hat' 
-                    ? 'rounded-t-2xl mt-4 border-l-4 border-l-white/40' 
-                    : 'ml-3 border-l-2 border-l-white/30'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {block.shape === 'hat' && <Flag size={13} className="text-white" />}
-                  <span>{block.text}</span>
+        <div className="flex-1 bg-white relative overflow-y-auto p-5 flex flex-col">
+          
+          {/* A. Panduan Cepat / Tutorial Visual Langkah 1-2-3 (Bisa ditutup/buka) */}
+          {showGuide && (
+            <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 shadow-sm text-xs text-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-blue-900 text-xs">
+                  <Sparkles size={16} className="text-amber-500" />
+                  <span>Panduan Cepat: Cara Mengembangkan Game di Scratch Studio</span>
                 </div>
-
-                <button
-                  onClick={() => handleDeleteBlock(block.id)}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/20 rounded transition-all text-white/80 hover:text-white"
-                  title="Hapus blok ini"
-                >
-                  <Trash2 size={13} />
+                <button onClick={() => setShowGuide(false)} className="text-[11px] font-bold text-slate-500 hover:text-slate-800 underline">
+                  Tutup Panduan
                 </button>
               </div>
-            ))}
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                <div className="p-2.5 bg-white rounded-xl border border-blue-100 space-y-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-black text-[9px] font-mono">LANGKAH 1</span>
+                  <h4 className="font-bold text-slate-800 text-[11px]">Pilih Sprite Karakter</h4>
+                  <p className="text-[10px] text-slate-500">Klik karakter di panel kanan bawah (Hero, Kunci, Pintu, Peti).</p>
+                </div>
+
+                <div className="p-2.5 bg-white rounded-xl border border-blue-100 space-y-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-black text-[9px] font-mono">LANGKAH 2</span>
+                  <h4 className="font-bold text-slate-800 text-[11px]">Pasang Blok Perintah</h4>
+                  <p className="text-[10px] text-slate-500">Klik blok warna di kiri untuk menambah logika pergerakan & skor.</p>
+                </div>
+
+                <div className="p-2.5 bg-white rounded-xl border border-blue-100 space-y-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-black text-[9px] font-mono">LANGKAH 3</span>
+                  <h4 className="font-bold text-slate-800 text-[11px]">Uji di Simulator</h4>
+                  <p className="text-[10px] text-slate-500">Klik Bendera Hijau 🏁 di atas kanvas, kendalikan hero dengan WASD / Panah.</p>
+                </div>
+
+                <div className="p-2.5 bg-white rounded-xl border border-blue-100 space-y-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-black text-[9px] font-mono">LANGKAH 4</span>
+                  <h4 className="font-bold text-slate-800 text-[11px]">Simpan ke Cloud</h4>
+                  <p className="text-[10px] text-slate-500">Klik tombol oranye "Simpan ke Cloud" di pojok kanan atas!</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* B. Header Lembar Kerja Skrip */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-200">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <Code size={16} className="text-indigo-600" />
+              <span>Area Skrip Pemrograman Blok untuk: <strong className="text-indigo-600">{selectedSprite.name}</strong></span>
+              {selectedSprite.id === 'entity_hero' && (
+                <span className="text-[10px] bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-mono font-bold">
+                  Karakter Utama
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetDefaultBlocks}
+                className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors"
+                title="Kembalikan blok ke susunan lengkap yang siap dimainkan"
+              >
+                <RotateCcw size={12} />
+                <span>Reset ke Blok Standar</span>
+              </button>
+
+              <button
+                onClick={() => setWorkspaceBlocks([])}
+                className="flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+                title="Kosongkan lembar kerja"
+              >
+                <Trash2 size={12} />
+                <span>Bersihkan</span>
+              </button>
+
+              <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200 font-bold">
+                {workspaceBlocks.length} Blok
+              </span>
+            </div>
           </div>
+
+          {/* C. Notifikasi Pembantu jika Memilih Sprite Non-Hero */}
+          {selectedSprite.id !== 'entity_hero' && (
+            <div className="p-3 mb-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Info size={16} className="text-amber-600 shrink-0" />
+                <span>Anda sedang memilih sprite <strong>{selectedSprite.name}</strong>. Logika utama pergerakan hero dan respon tabrakan diatur di sprite <strong>Hero (Ksatria)</strong>.</span>
+              </div>
+              <button
+                onClick={() => setSelectedSpriteId('entity_hero')}
+                className="shrink-0 px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] rounded-lg transition-colors shadow-sm"
+              >
+                Beralih ke Hero &rarr;
+              </button>
+            </div>
+          )}
+
+          {/* D. Susunan Blok Workspace (atau Tampilan Jika Kosong) */}
+          {workspaceBlocks.length === 0 ? (
+            <div className="py-16 text-center space-y-4 max-w-md mx-auto my-auto">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-500 mx-auto flex items-center justify-center shadow-sm">
+                <Code size={32} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-800 text-sm">Lembar Skrip Blok Masih Kosong</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Klik blok warna di panel kiri untuk mulai menyusun perintah logika, atau klik tombol di bawah untuk memasang skrip lengkap otomatis yang siap dimainkan!
+                </p>
+              </div>
+              <button
+                onClick={handleResetDefaultBlocks}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all"
+              >
+                <Sparkles size={15} />
+                <span>Pasang Skrip Logika Lengkap (Otomatis)</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1 max-w-xl pb-10">
+              {workspaceBlocks.map((block) => (
+                <div
+                  key={block.id}
+                  style={{ backgroundColor: block.color }}
+                  className={`group relative text-white text-xs font-bold px-4 py-2.5 rounded-lg shadow-sm border-t border-white/25 border-b border-black/20 flex items-center justify-between transition-all ${
+                    block.shape === 'hat' 
+                      ? 'rounded-t-2xl mt-4 border-l-4 border-l-white/40' 
+                      : 'ml-3 border-l-2 border-l-white/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {block.shape === 'hat' && <Flag size={13} className="text-white" />}
+                    <span>{block.text}</span>
+                  </div>
+
+                  <button
+                    onClick={() => handleDeleteBlock(block.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/20 rounded transition-all text-white/80 hover:text-white"
+                    title="Hapus blok ini"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* === KOLOM 4: STAGE & SPRITE MANAGER (KANAN) === */}
@@ -627,7 +615,6 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
           {/* A. STAGE HEADER: GREEN FLAG & RED STOP & SCORE */}
           <div className="h-10 bg-white border-b border-slate-300 px-3 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
-              {/* Green Flag (Play) */}
               <button
                 onClick={handleStartPlay}
                 className={`p-1.5 rounded-md hover:bg-slate-100 transition-colors ${isLiveRunning ? 'bg-emerald-50 text-emerald-600' : 'text-emerald-500'}`}
@@ -636,53 +623,57 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
                 <Flag size={18} fill="currentColor" />
               </button>
 
-              {/* Red Octagon (Stop) */}
               <button
                 onClick={handleStopPlay}
-                className="p-1.5 rounded-md text-rose-500 hover:bg-slate-100 transition-colors"
-                title="Hentikan Game"
+                className="p-1.5 rounded-md hover:bg-slate-100 text-rose-500 transition-colors"
+                title="Hentikan Game (Red Stop)"
               >
                 <Square size={16} fill="currentColor" />
               </button>
+
+              <div className="h-4 w-px bg-slate-200 mx-1"></div>
+
+              <span className="text-[11px] font-mono text-slate-500">
+                {isLiveRunning ? '🟢 Live Stage Running' : '⚪ Stage Siaga'}
+              </span>
             </div>
 
-            {/* Score Variable HUD (Khas Scratch) */}
-            <div className="bg-[#FF8C1A] text-white text-[11px] font-bold px-2.5 py-0.5 rounded shadow-inner flex items-center gap-2">
+            <div className="flex items-center gap-2 bg-[#FFAB19] text-slate-950 px-2 py-0.5 rounded font-black font-mono text-xs">
               <span>Skor:</span>
-              <span className="font-mono text-sm">{score}</span>
+              <span>{score}</span>
             </div>
           </div>
 
-          {/* B. STAGE CANVAS (DISPLAY SCREEN) */}
-          <div className="p-3 bg-white flex justify-center items-center border-b border-slate-300">
-            <div className="rounded-xl overflow-hidden border-2 border-slate-400 bg-slate-950 shadow-md">
+          {/* B. STAGE CANVAS AREA */}
+          <div className="p-3 bg-[#E9EEF2] flex items-center justify-center shrink-0">
+            <div className="border-4 border-slate-700 rounded-2xl overflow-hidden shadow-md bg-black">
               <canvas
                 ref={stageCanvasRef}
-                className="block cursor-crosshair"
                 width={canvasWidth}
                 height={canvasHeight}
+                className="block outline-none"
+                tabIndex={0}
               />
             </div>
           </div>
 
-          {/* C. ACTIVE SPRITE CONTROLLER & ATTRIBUTES */}
-          <div className="bg-white border-b border-slate-300 p-2.5 flex items-center justify-between text-xs text-slate-600 shrink-0 font-medium">
+          {/* C. SELECTED SPRITE INFO BAR */}
+          <div className="h-10 bg-white border-y border-slate-300 px-4 flex items-center justify-between text-xs shrink-0 font-medium">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-800">Sprite:</span>
-              <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-indigo-600 font-bold">{selectedSprite.name}</span>
+              <span className="text-slate-400">Sprite:</span>
+              <strong className="text-indigo-600">{selectedSprite.name}</strong>
             </div>
-
-            <div className="flex items-center gap-3 font-mono text-[11px]">
-              <span>x: <strong>{selectedSprite.initialPosition.x}</strong></span>
-              <span>y: <strong>{selectedSprite.initialPosition.y}</strong></span>
-              <span>Size: <strong>100%</strong></span>
+            <div className="flex items-center gap-3 text-slate-400 font-mono text-[11px]">
+              <span>x: {selectedSprite.initialPosition.x}</span>
+              <span>y: {selectedSprite.initialPosition.y}</span>
+              <span>Size: 100%</span>
             </div>
           </div>
 
-          {/* D. SPRITES LIST (SPRITE CARDS LIBRARY) */}
-          <div className="flex-1 p-3 overflow-y-auto space-y-2">
-            <div className="text-[11px] font-bold text-slate-500 mb-1 flex items-center justify-between">
-              <span>Daftar Sprites ({sprites.length})</span>
+          {/* D. SPRITES MANAGER GRID */}
+          <div className="flex-1 bg-[#F9F9F9] p-3 overflow-y-auto">
+            <div className="text-[11px] font-black uppercase text-slate-500 mb-2 px-1 tracking-wider">
+              Daftar Sprites ({sprites.length})
             </div>
 
             <div className="grid grid-cols-3 gap-2">
@@ -692,11 +683,10 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
                   onClick={() => setSelectedSpriteId(sp.id)}
                   className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     selectedSpriteId === sp.id
-                      ? 'bg-blue-50 border-blue-500 shadow-sm'
+                      ? 'bg-blue-50 border-blue-500 shadow-sm ring-2 ring-blue-400/30'
                       : 'bg-white border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  {/* Sprite Thumbnail Icon */}
                   <div className="w-10 h-10 rounded-lg bg-slate-900 flex items-center justify-center border border-slate-700">
                     {sp.type === 'player' ? (
                       <span className="text-base">🦸‍♂️</span>

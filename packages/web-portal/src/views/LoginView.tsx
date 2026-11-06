@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { UserRole, UserProfile } from '@blockgame/shared';
-import { ShieldCheck, Code2, UserCheck, Sparkles, LogIn, UserPlus, Lock, Mail, User, AlertCircle } from 'lucide-react';
+import { LogIn, UserPlus, Lock, Mail, User, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 
 interface LoginViewProps {
   onLoginSuccess: (user: UserProfile) => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const { login, register, switchQuickDemo } = useAuth();
+  const { login, register } = useAuth();
   const [isRegisterMode, setIsRegisterMode] = useState(false);
 
   // Form states
@@ -59,18 +59,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleQuickDemo = async (role: UserRole) => {
-    try {
-      setLoading(true);
-      setErrorMsg(null);
-      const user = await switchQuickDemo(role);
-      onLoginSuccess(user);
-    } catch (err: any) {
-      setErrorMsg('Gagal login akun demo');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const isAlreadyRegisteredError = errorMsg && errorMsg.toLowerCase().includes('sudah terdaftar');
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
@@ -114,9 +103,29 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
           {/* Error Message Alert */}
           {errorMsg && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-2 text-rose-300 text-xs">
-              <AlertCircle size={16} className="shrink-0" />
-              <span>{errorMsg}</span>
+            <div className={`p-3 rounded-xl flex items-start gap-2.5 text-xs ${
+              isAlreadyRegisteredError 
+                ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300' 
+                : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+            }`}>
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+              <div className="space-y-1.5 flex-1">
+                <p>{errorMsg}</p>
+                {isAlreadyRegisteredError && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegisterMode(false);
+                      setIdentifier(username || email);
+                      setErrorMsg(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-400 hover:text-amber-200 underline pt-0.5"
+                  >
+                    <span>Masuk (Login) dengan akun "{username || email}"</span>
+                    <ArrowRight size={13} />
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -130,7 +139,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   <input
                     type="text"
                     required
-                    placeholder="Contoh: CloudAdmin / dev123 / email"
+                    placeholder="Masukkan username atau email Anda"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
@@ -161,6 +170,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <LogIn size={16} />
                 <span>{loading ? 'Memeriksa Kredensial...' : 'Masuk ke Layanan'}</span>
               </button>
+
+              <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl text-[11px] text-slate-400 space-y-1">
+                <p className="font-semibold text-slate-300">💡 Status Akun Developer:</p>
+                <p>Jika Anda telah mendaftar sebagai Developer, masuk di sini untuk mengecek status verifikasi atau mulai membuat game setelah disetujui Admin.</p>
+              </div>
             </form>
           ) : (
             /* Form Register */
@@ -234,51 +248,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               </button>
             </form>
           )}
-
-          {/* Quick Demo Switcher Box (Sangat berguna untuk Dosen & Teman) */}
-          <div className="pt-4 border-t border-slate-800 space-y-2.5">
-            <div className="text-[11px] font-mono text-slate-400 flex items-center justify-between">
-              <span className="flex items-center gap-1 font-semibold text-amber-400">
-                <Sparkles size={12} /> Akun Demo Cepat (1-Klik Masuk):
-              </span>
-              <span className="text-[10px] text-slate-500">Auto Match Role</span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemo(UserRole.ADMIN)}
-                className="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-left transition-all group"
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  <ShieldCheck size={14} /> Admin
-                </div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">admin123</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemo(UserRole.DEVELOPER)}
-                className="p-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-left transition-all group"
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  <Code2 size={14} /> Developer
-                </div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">dev123</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemo(UserRole.PLAYER)}
-                className="p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-left transition-all group"
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  <UserCheck size={14} /> Player
-                </div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">player123</div>
-              </button>
-            </div>
-          </div>
 
         </div>
 

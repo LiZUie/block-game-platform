@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserRole, UserProfile } from '@blockgame/shared';
 import { Navbar } from './components/Navbar';
@@ -7,16 +7,31 @@ import { CatalogView } from './views/CatalogView';
 import { PlayerView } from './views/PlayerView';
 import { StudioView } from './views/StudioView';
 import { AdminView } from './views/AdminView';
+import { DeveloperPendingView } from './views/DeveloperPendingView';
 
 const MainApp: React.FC = () => {
   const { user, loading } = useAuth();
   const [currentView, setCurrentView] = useState<'catalog' | 'studio' | 'admin' | 'play'>('catalog');
   const [activeGameId, setActiveGameId] = useState<string>('game_adventure_dungeon');
 
+  // Sinkronisasi view awal saat user termuat
+  useEffect(() => {
+    if (user) {
+      if (user.role === UserRole.ADMIN) {
+        setCurrentView('admin');
+      } else if (user.role === UserRole.DEVELOPER && user.status === 'ACTIVE') {
+        setCurrentView('studio');
+      } else {
+        setCurrentView('catalog');
+      }
+    }
+  }, [user?.role, user?.status]);
+
   const handleLoginSuccess = (loggedInUser: UserProfile) => {
     // Arahkan otomatis ke halaman sesuai peran:
     // Admin -> Cloud Admin Dashboard
-    // Developer -> Developer Studio 2D
+    // Developer (Active) -> Developer Studio 2D
+    // Developer (Pending) -> Ditangani khusus oleh DeveloperPendingView
     // Player -> Katalog Game Arcade
     if (loggedInUser.role === UserRole.ADMIN) {
       setCurrentView('admin');
@@ -49,9 +64,21 @@ const MainApp: React.FC = () => {
     );
   }
 
-  // Jika belum login, tampilkan Layar Login Gerbang Awal
+  // 1. Jika belum login, tampilkan Layar Login Gerbang Awal
   if (!user) {
     return <LoginView onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // 2. Jika Developer masih PENDING, Kunci hanya di Layar Menunggu Persetujuan
+  // (Tidak boleh masuk ke home player / katalog game)
+  if (user.role === UserRole.DEVELOPER && user.status === 'PENDING') {
+    return (
+      <DeveloperPendingView
+        onApproved={() => {
+          setCurrentView('studio');
+        }}
+      />
+    );
   }
 
   return (
