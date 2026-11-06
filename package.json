@@ -6,6 +6,8 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "npm run build --workspace=@blockgame/shared",
+    "predev": "npm run build --workspace=@blockgame/shared",
     "dev": "concurrently -n \"CLOUD-API,WEB-PORTAL\" -c \"blue,emerald\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev --workspace=@blockgame/cloud-service",
     "dev:frontend": "npm run dev --workspace=@blockgame/web-portal",
