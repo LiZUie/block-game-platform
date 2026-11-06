@@ -311,15 +311,11 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished, onBack 
   if (studioMode === 'blockly') {
     return (
       <div className="relative w-full h-[calc(100vh-4rem)] flex flex-col">
-        <div className="absolute top-2.5 right-48 z-30">
-          <button
-            onClick={() => setStudioMode('classic')}
-            className="text-[11px] font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/30 px-3 py-1 rounded-md transition backdrop-blur-sm"
-          >
-            Switch to Classic Editor
-          </button>
-        </div>
-        <DeveloperStudio onBack={onBack} onGamePublished={onGamePublished} />
+        <DeveloperStudio
+          onBack={onBack}
+          onGamePublished={onGamePublished}
+          onSwitchToClassic={() => setStudioMode('classic')}
+        />
       </div>
     );
   }

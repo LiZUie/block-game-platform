@@ -21,8 +21,8 @@ export interface SpriteTarget {
   visible: boolean;
   rotationStyle: 'all-around' | 'left-right' | 'dont-rotate';
   costumeEmoji: string;
-  costumeImageUrl?: string; // Mendukung upload gambar/URL sprite bebas
-  sayText?: string;         // Balon percakapan (blok "say")
+  costumeImageUrl?: string;
+  sayText?: string;
   workspaceJson?: Record<string, any>;
   scripts: CompiledScript[];
 }
@@ -53,6 +53,62 @@ interface ThreadProcess {
   loopStack: { pcStart: number; remaining?: number }[];
 }
 
+// Web Audio Synthesizer bawaan tanpa perlu file MP3 eksternal
+export function playSynthSound(type: string) {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const now = ctx.currentTime;
+    if (type === 'coin') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(987.77, now);
+      osc.frequency.setValueAtTime(1318.51, now + 0.08);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } else if (type === 'jump') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(180, now);
+      osc.frequency.exponentialRampToValueAtTime(520, now + 0.18);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } else if (type === 'laser') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(110, now + 0.15);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    } else if (type === 'hit') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(45, now + 0.28);
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+      osc.start(now);
+      osc.stop(now + 0.28);
+    } else {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(659.25, now + 0.1);
+      osc.frequency.setValueAtTime(783.99, now + 0.2);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      osc.start(now);
+      osc.stop(now + 0.4);
+    }
+  } catch {}
+}
+
 export class BlockVerseRuntime {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -63,22 +119,26 @@ export class BlockVerseRuntime {
   private pressedKeys: Set<string> = new Set();
   private imageCache: Map<string, HTMLImageElement> = new Map();
   private mousePos: { x: number; y: number } = { x: 0, y: 0 };
+  private draggingEntity: RuntimeEntity | null = null;
   private isRunning: boolean = false;
   private rafId: number | null = null;
   private onScoreSubmit?: (score: number) => void;
   private onStateUpdate?: (vars: Record<string, any>) => void;
+  private onSpriteDragged?: (spriteId: string, newX: number, newY: number) => void;
 
   constructor(
     canvas: HTMLCanvasElement,
     project: BlockVerseProject,
     onScoreSubmit?: (score: number) => void,
-    onStateUpdate?: (vars: Record<string, any>) => void
+    onStateUpdate?: (vars: Record<string, any>) => void,
+    onSpriteDragged?: (spriteId: string, newX: number, newY: number) => void
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.project = JSON.parse(JSON.stringify(project));
     this.onScoreSubmit = onScoreSubmit;
     this.onStateUpdate = onStateUpdate;
+    this.onSpriteDragged = onSpriteDragged;
     this.resetState();
     this.bindInputEvents();
   }
@@ -87,6 +147,8 @@ export class BlockVerseRuntime {
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
     this.canvas.addEventListener('mousemove', this.handleMouseMove);
+    this.canvas.addEventListener('mousedown', this.handleMouseDown);
+    window.addEventListener('mouseup', this.handleMouseUp);
   }
 
   public destroy() {
@@ -94,6 +156,8 @@ export class BlockVerseRuntime {
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
     this.canvas.removeEventListener('mousemove', this.handleMouseMove);
+    this.canvas.removeEventListener('mousedown', this.handleMouseDown);
+    window.removeEventListener('mouseup', this.handleMouseUp);
   }
 
   private handleMouseMove = (e: MouseEvent) => {
@@ -102,10 +166,41 @@ export class BlockVerseRuntime {
     const scaleY = 360 / rect.height;
     this.mousePos.x = Math.round((e.clientX - rect.left) * scaleX - 240);
     this.mousePos.y = Math.round(180 - (e.clientY - rect.top) * scaleY);
+
+    if (this.draggingEntity) {
+      this.draggingEntity.x = Math.max(-230, Math.min(230, this.mousePos.x));
+      this.draggingEntity.y = Math.max(-170, Math.min(170, this.mousePos.y));
+      if (!this.isRunning) this.renderFrame();
+    }
+  };
+
+  private handleMouseDown = () => {
+    // Cari sprite teratas yang diklik di Stage untuk fitur Drag-and-Drop
+    for (let i = this.entities.length - 1; i >= 0; i--) {
+      const ent = this.entities[i];
+      if (!ent.visible || ent.isClone) continue;
+      const dist = Math.hypot(ent.x - this.mousePos.x, ent.y - this.mousePos.y);
+      if (dist <= (ent.size / 100) * 24) {
+        this.draggingEntity = ent;
+        break;
+      }
+    }
+  };
+
+  private handleMouseUp = () => {
+    if (this.draggingEntity) {
+      if (this.onSpriteDragged) {
+        this.onSpriteDragged(
+          this.draggingEntity.id,
+          Math.round(this.draggingEntity.x),
+          Math.round(this.draggingEntity.y)
+        );
+      }
+      this.draggingEntity = null;
+    }
   };
 
   private handleKeyDown = (e: KeyboardEvent) => {
-    // Jangan bajak input ketika user sedang mengetik di form input/textarea
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
@@ -195,8 +290,6 @@ export class BlockVerseRuntime {
         return Math.round(entity.x);
       case 'Y_POS':
         return Math.round(entity.y);
-      case 'DIRECTION':
-        return Math.round(entity.direction);
       case 'MOUSE_X':
         return this.mousePos.x;
       case 'MOUSE_Y':
@@ -241,14 +334,14 @@ export class BlockVerseRuntime {
           return Math.abs(entity.x) >= 225 || Math.abs(entity.y) >= 165;
         }
         if (targetName === '_mouse_') {
-          const r = (entity.size / 100) * 20;
+          const r = (entity.size / 100) * 22;
           return Math.hypot(entity.x - this.mousePos.x, entity.y - this.mousePos.y) < r;
         }
-        const r1 = (entity.size / 100) * 18;
+        const r1 = (entity.size / 100) * 20;
         return this.entities.some((other) => {
           if (other === entity || !other.visible) return false;
           if (other.name !== targetName && other.parentId !== targetName) return false;
-          const r2 = (other.size / 100) * 18;
+          const r2 = (other.size / 100) * 20;
           return Math.hypot(entity.x - other.x, entity.y - other.y) < r1 + r2;
         });
       }
@@ -326,8 +419,8 @@ export class BlockVerseRuntime {
             this.clampPosition(thread.entity);
             break;
           case 'GOTO_RANDOM':
-            thread.entity.x = Math.floor(Math.random() * 440) - 220;
-            thread.entity.y = Math.floor(Math.random() * 320) - 160;
+            thread.entity.x = Math.floor(Math.random() * 420) - 210;
+            thread.entity.y = Math.floor(Math.random() * 300) - 150;
             break;
           case 'CHANGE_X':
             thread.entity.x += Number(this.evaluateValue(op.dx, thread.entity));
@@ -363,8 +456,6 @@ export class BlockVerseRuntime {
               thread.entity.sayExpireTime = now + secs * 1000;
               thread.waitUntilTime = now + secs * 1000;
               yielded = true;
-            } else {
-              thread.entity.sayExpireTime = undefined;
             }
             break;
           }
@@ -379,6 +470,9 @@ export class BlockVerseRuntime {
             break;
           case 'HIDE':
             thread.entity.visible = false;
+            break;
+          case 'PLAY_SOUND':
+            playSynthSound(op.sound || 'coin');
             break;
           case 'SET_VAR': {
             const val = this.evaluateValue(op.value, thread.entity);
@@ -472,8 +566,6 @@ export class BlockVerseRuntime {
             if (this.onScoreSubmit) this.onScoreSubmit(finalScore);
             break;
           }
-          default:
-            break;
         }
       }
 
@@ -498,18 +590,17 @@ export class BlockVerseRuntime {
     const now = performance.now();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Gambar Latar Belakang Sesuai Pilihan Developer
     ctx.fillStyle = this.project.stageBackdrop || '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const pattern = this.project.stagePattern || 'grid';
     if (pattern === 'stars') {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
       for (let i = 0; i < 38; i++) {
         ctx.fillRect(((i * 97) % 460) + 10, ((i * 53) % 340) + 10, 2, 2);
       }
     } else if (pattern === 'grid') {
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
       ctx.lineWidth = 1;
       for (let x = 0; x <= 480; x += 30) {
         ctx.beginPath();
@@ -533,7 +624,6 @@ export class BlockVerseRuntime {
       ctx.fillRect(0, 0, 480, 360);
     }
 
-    // 2. Render Semua Sprite (Emoji atau Custom Image Upload)
     for (const entity of this.entities) {
       if (!entity.visible) continue;
 
@@ -571,7 +661,6 @@ export class BlockVerseRuntime {
 
       ctx.restore();
 
-      // Balon Percakapan (Blok "say")
       if (entity.sayText && (!entity.sayExpireTime || now < entity.sayExpireTime)) {
         ctx.font = 'bold 12px sans-serif';
         const textWidth = Math.max(40, ctx.measureText(entity.sayText).width + 16);
@@ -593,7 +682,6 @@ export class BlockVerseRuntime {
       }
     }
 
-    // 3. Render Badge Variabel di Stage
     const varKeys = Object.keys(this.variables);
     varKeys.forEach((key, idx) => {
       const val = this.variables[key];
@@ -631,8 +719,147 @@ export class BlockVerseRuntime {
 }
 
 // ============================================================================
-// KOLEKSI PROJECT TEMPLATES (Blank Project, Platformer/Collector, Space Invaders)
+// 1. GAME LENGKAP SIAP DIMAINKAN: CAT & STAR CATCHER (Hero + Star + Bomb)
 // ============================================================================
+export const STAR_CATCHER_GAME: BlockVerseProject = {
+  title: 'Cat & Star Catcher',
+  stageBackdrop: '#e0f2fe',
+  stagePattern: 'sky',
+  variables: {
+    score: 0,
+  },
+  broadcasts: ['game over', 'win'],
+  sprites: [
+    {
+      id: 'sprite_hero',
+      name: 'Hero',
+      x: 0,
+      y: -115,
+      size: 110,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'left-right',
+      costumeEmoji: '🐱',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'GOTO_XY', x: 0, y: -115 },
+            { op: 'SAY', text: 'Tangkap Bintang & Hindari Bom!', seconds: 2 },
+            {
+              op: 'FOREVER',
+              substack: [
+                {
+                  op: 'IF',
+                  condition: { type: 'KEY_PRESSED', key: 'arrowright' },
+                  substack: [{ op: 'CHANGE_X', dx: 8 }],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'KEY_PRESSED', key: 'arrowleft' },
+                  substack: [{ op: 'CHANGE_X', dx: -8 }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          trigger: 'WHEN_RECEIVE',
+          param: 'game over',
+          ops: [
+            { op: 'SAY', text: 'BOOM! Game Over!', seconds: 2 },
+            { op: 'SUBMIT_SCORE', score: { type: 'VAR', name: 'score' } },
+            { op: 'STOP_ALL' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'sprite_star',
+      name: 'Star',
+      x: -80,
+      y: 150,
+      size: 95,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '⭐',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'GOTO_XY', x: -80, y: 150 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'CHANGE_Y', dy: -5 },
+                {
+                  op: 'IF',
+                  condition: { type: 'TOUCHING', target: 'Hero' },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'coin' },
+                    { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
+                    { op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 },
+                  ],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -165 },
+                  substack: [
+                    { op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'sprite_bomb',
+      name: 'Bomb',
+      x: 90,
+      y: 160,
+      size: 95,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '💣',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'GOTO_XY', x: 90, y: 160 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'CHANGE_Y', dy: -6 },
+                {
+                  op: 'IF',
+                  condition: { type: 'TOUCHING', target: 'Hero' },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'hit' },
+                    { op: 'BROADCAST', message: 'game over' },
+                  ],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -165 },
+                  substack: [
+                    { op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// 2. BLANK PROJECT (Kanvas Bersih)
 export const BLANK_STARTER_PROJECT: BlockVerseProject = {
   title: 'My Awesome Game',
   stageBackdrop: '#ffffff',
@@ -657,7 +884,22 @@ export const BLANK_STARTER_PROJECT: BlockVerseProject = {
           trigger: 'WHEN_FLAG_CLICKED',
           ops: [
             { op: 'GOTO_XY', x: 0, y: 0 },
-            { op: 'SAY', text: 'Hello BlockVerse!', seconds: 2 },
+            { op: 'SAY', text: 'Gunakan panah kiri/kanan!', seconds: 2 },
+            {
+              op: 'FOREVER',
+              substack: [
+                {
+                  op: 'IF',
+                  condition: { type: 'KEY_PRESSED', key: 'arrowright' },
+                  substack: [{ op: 'CHANGE_X', dx: 6 }],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'KEY_PRESSED', key: 'arrowleft' },
+                  substack: [{ op: 'CHANGE_X', dx: -6 }],
+                },
+              ],
+            },
           ],
         },
       ],
@@ -665,6 +907,7 @@ export const BLANK_STARTER_PROJECT: BlockVerseProject = {
   ],
 };
 
+// 3. COIN HUNTER RPG
 export const COIN_HUNTER_PRESET: BlockVerseProject = {
   title: 'Coin Hunter Adventure',
   stageBackdrop: '#e0f2fe',
@@ -683,7 +926,7 @@ export const COIN_HUNTER_PRESET: BlockVerseProject = {
       direction: 90,
       visible: true,
       rotationStyle: 'left-right',
-      costumeEmoji: '🧙♂️',
+      costumeEmoji: '🥷',
       scripts: [
         {
           trigger: 'WHEN_FLAG_CLICKED',
@@ -724,6 +967,7 @@ export const COIN_HUNTER_PRESET: BlockVerseProject = {
                   op: 'IF',
                   condition: { type: 'TOUCHING', target: 'Knight' },
                   substack: [
+                    { op: 'PLAY_SOUND', sound: 'coin' },
                     { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
                     { op: 'GOTO_RANDOM' },
                   ],
@@ -737,6 +981,7 @@ export const COIN_HUNTER_PRESET: BlockVerseProject = {
   ],
 };
 
+// 4. SPACE INVADERS
 export const SPACE_INVADERS_PRESET: BlockVerseProject = {
   title: 'Space Invaders',
   stageBackdrop: '#05070d',
@@ -776,7 +1021,10 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
         {
           trigger: 'WHEN_KEY_PRESSED',
           param: 'space',
-          ops: [{ op: 'CREATE_CLONE', target: 'laser' }],
+          ops: [
+            { op: 'PLAY_SOUND', sound: 'laser' },
+            { op: 'CREATE_CLONE', target: 'laser' },
+          ],
         },
       ],
     },
@@ -805,6 +1053,7 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
                   op: 'IF',
                   condition: { type: 'TOUCHING', target: 'alien' },
                   substack: [
+                    { op: 'PLAY_SOUND', sound: 'hit' },
                     { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
                     { op: 'DELETE_CLONE' },
                   ],

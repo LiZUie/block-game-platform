@@ -19,19 +19,23 @@ import {
   FolderOpen,
   Upload,
   PlusCircle,
+  Play,
 } from 'lucide-react';
 import {
   BLANK_STARTER_PROJECT,
   BlockVerseProject,
   BlockVerseRuntime,
   COIN_HUNTER_PRESET,
+  playSynthSound,
   SPACE_INVADERS_PRESET,
   SpriteTarget,
+  STAR_CATCHER_GAME,
 } from '../engine/BlockVerseEngine';
 import {
   CATEGORY_BLOCKS,
   compileWorkspaceToScripts,
   registerScratchBlocks,
+  scriptsToBlocklyXml,
   updateStudioDynamicContext,
 } from '../engine/ScratchBlocksSetup';
 
@@ -45,6 +49,7 @@ interface StickyComment {
 const CATEGORIES = [
   { id: 'Motion', label: 'Motion', color: '#4C97FF' },
   { id: 'Looks', label: 'Looks', color: '#9966FF' },
+  { id: 'Sound', label: 'Sound', color: '#CF63CF' },
   { id: 'Events', label: 'Events', color: '#FFBF00' },
   { id: 'Control', label: 'Control', color: '#FFAB19' },
   { id: 'Sensing', label: 'Sensing', color: '#5CB1D6' },
@@ -52,22 +57,24 @@ const CATEGORIES = [
   { id: 'Variables', label: 'Variables', color: '#FF8C1A' },
 ];
 
+// Single-codepoint emojis (bebas bug simbol gender ♂ terpisah)
 const SPRITE_GALLERY_EMOJIS = [
-  '🐱', '🧙♂️', '🥷', '🦸♂️', '🤖', '👾', '🛸', '🚀',
-  '🐉', '🦖', '👻', '🧟', '🪙', '💎', '⚡', '🔥',
-  '💣', '🗡️', '🛡️', '🏎️', '⚽', '🏀', '🍎', '🏆',
+  '🐱', '🥷', '🤖', '👾', '🛸', '🚀', '🐉', '🦖',
+  '👻', '🤠', '🐸', '🦊', '⭐', '🪙', '💎', '⚡',
+  '🔥', '💣', '🗡️', '🛡️', '🏎️', '⚽', '🍎', '🏆',
 ];
 
 export interface DeveloperStudioProps {
   onBack?: () => void;
   onGamePublished?: (gameId: string) => void;
+  onSwitchToClassic?: () => void;
 }
 
-export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGamePublished }) => {
-  // Default dimulai dari Blank Starter Project (Bukan terkunci di Alien)
-  const [project, setProject] = useState<BlockVerseProject>(BLANK_STARTER_PROJECT);
+export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGamePublished, onSwitchToClassic }) => {
+  // Default langsung memuat game "Cat & Star Catcher" yang utuh dan siap dimainkan
+  const [project, setProject] = useState<BlockVerseProject>(STAR_CATCHER_GAME);
   const [selectedSpriteId, setSelectedSpriteId] = useState<string>(
-    BLANK_STARTER_PROJECT.sprites[0].id
+    STAR_CATCHER_GAME.sprites[0].id
   );
   const [activeCategory, setActiveCategory] = useState<string>('Motion');
   const [activeTab, setActiveTab] = useState<'code' | 'costumes' | 'sounds'>('code');
@@ -87,16 +94,38 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
   const activeSprite =
     project.sprites.find((s) => s.id === selectedSpriteId) || project.sprites[0];
 
-  // Sinkronkan nama Sprite, Variabel, dan Broadcast ke Dropdown Blockly secara dinamis
+  // Sinkronkan konteks dinamis untuk semua dropdown Blockly
   useEffect(() => {
     updateStudioDynamicContext({
+      activeSpriteName: activeSprite?.name || 'Hero',
       spriteNames: project.sprites.map((s) => s.name),
       variableNames: Object.keys(project.variables),
-      broadcastMessages: project.broadcasts || ['message1', 'game over'],
+      broadcastMessages: project.broadcasts || ['message1', 'game over', 'win'],
     });
-  }, [project]);
+  }, [project, activeSprite]);
 
-  // 1. Inisialisasi Blockly (Renderer Zelos = Scratch 3.0)
+  const loadSpriteScriptsIntoWorkspace = (
+    workspace: Blockly.WorkspaceSvg,
+    sprite: SpriteTarget
+  ) => {
+    Blockly.Events.disable();
+    workspace.clear();
+    try {
+      if (sprite.workspaceJson && Object.keys(sprite.workspaceJson).length > 0) {
+        Blockly.serialization.workspaces.load(sprite.workspaceJson, workspace);
+      } else if (sprite.scripts && sprite.scripts.length > 0) {
+        // Decompile otomatis dari scripts ke blok visual jika belum ada workspaceJson
+        const xmlStr = scriptsToBlocklyXml(sprite.scripts);
+        const dom = Blockly.utils.xml.textToDom(xmlStr);
+        Blockly.Xml.domToWorkspace(dom, workspace);
+      }
+    } catch (err) {
+      console.warn('Workspace load warning:', err);
+    }
+    Blockly.Events.enable();
+  };
+
+  // 1. Inisialisasi Blockly (Zelos = Scratch 3.0)
   useEffect(() => {
     registerScratchBlocks();
     if (!blocklyDivRef.current) return;
@@ -110,7 +139,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
       zoom: {
         controls: true,
         wheel: true,
-        startScale: 0.8,
+        startScale: 0.78,
         maxScale: 1.5,
         minScale: 0.4,
         scaleSpeed: 1.1,
@@ -125,6 +154,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     });
 
     workspaceRef.current = workspace;
+    loadSpriteScriptsIntoWorkspace(workspace, activeSprite);
 
     const onWorkspaceChange = (e: Blockly.Events.Abstract) => {
       if (e.isUiEvent || !workspaceRef.current) return;
@@ -153,33 +183,38 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     };
   }, []);
 
-  // 2. Ganti isi Flyout ketika Kategori di Kiri Diklik
+  // 2. Ganti isi Flyout saat Kategori di Kiri Diklik
   useEffect(() => {
     if (!workspaceRef.current) return;
     workspaceRef.current.updateToolbox({
       kind: 'flyoutToolbox',
       contents: CATEGORY_BLOCKS[activeCategory] || [],
     });
-  }, [activeCategory]);
+  }, [activeCategory, project.variables, project.broadcasts, project.sprites]);
 
-  // 3. Muat Workspace Spesifik Milik Sprite yang Dipilih (Tanpa Mereset ke Alien)
+  // 3. Muat Blok Visual saat Pindah Sprite atau Ganti Template
   useEffect(() => {
     if (!workspaceRef.current || !activeSprite) return;
-    Blockly.Events.disable();
-    workspaceRef.current.clear();
-    if (activeSprite.workspaceJson && Object.keys(activeSprite.workspaceJson).length > 0) {
-      Blockly.serialization.workspaces.load(
-        activeSprite.workspaceJson,
-        workspaceRef.current
-      );
-    }
-    Blockly.Events.enable();
-  }, [selectedSpriteId]);
+    loadSpriteScriptsIntoWorkspace(workspaceRef.current, activeSprite);
+  }, [selectedSpriteId, project.title]);
 
-  // 4. Inisialisasi Live Stage Canvas 2D Runtime
+  // 4. Inisialisasi Live Stage Canvas 2D Runtime + Callback Drag Sprite di Stage
   useEffect(() => {
     if (!stageCanvasRef.current) return;
-    const runtime = new BlockVerseRuntime(stageCanvasRef.current, project);
+    const runtime = new BlockVerseRuntime(
+      stageCanvasRef.current,
+      project,
+      undefined,
+      undefined,
+      (spriteId, newX, newY) => {
+        setProject((prev) => ({
+          ...prev,
+          sprites: prev.sprites.map((sp) =>
+            sp.id === spriteId ? { ...sp, x: newX, y: newY } : sp
+          ),
+        }));
+      }
+    );
     runtimeRef.current = runtime;
     runtime.renderFrame();
 
@@ -195,18 +230,17 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
   }, [project]);
 
   const handleSelectTemplate = (templateKey: string) => {
-    let chosen: BlockVerseProject = BLANK_STARTER_PROJECT;
+    let chosen: BlockVerseProject = STAR_CATCHER_GAME;
+    if (templateKey === 'blank') chosen = BLANK_STARTER_PROJECT;
     if (templateKey === 'coin') chosen = COIN_HUNTER_PRESET;
     if (templateKey === 'space') chosen = SPACE_INVADERS_PRESET;
 
     const cloned = JSON.parse(JSON.stringify(chosen)) as BlockVerseProject;
-    if (workspaceRef.current) {
-      Blockly.Events.disable();
-      workspaceRef.current.clear();
-      Blockly.Events.enable();
-    }
     setProject(cloned);
     setSelectedSpriteId(cloned.sprites[0].id);
+    if (workspaceRef.current) {
+      loadSpriteScriptsIntoWorkspace(workspaceRef.current, cloned.sprites[0]);
+    }
   };
 
   const updateActiveSpriteProp = (key: keyof SpriteTarget, value: any) => {
@@ -218,13 +252,13 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     }));
   };
 
-  const handleAddSprite = (emoji: string = '🚀') => {
+  const handleAddSprite = (emoji: string = '⭐') => {
     const newId = `sprite_${Date.now()}`;
     const newSprite: SpriteTarget = {
       id: newId,
       name: `Sprite${project.sprites.length + 1}`,
-      x: 0,
-      y: 0,
+      x: Math.floor(Math.random() * 160) - 80,
+      y: Math.floor(Math.random() * 120) - 60,
       size: 100,
       direction: 90,
       visible: true,
@@ -247,7 +281,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
   };
 
   const handleCreateVariable = () => {
-    const varName = window.prompt('Masukkan nama variabel baru (contoh: darah, kecepatan, level):');
+    const varName = window.prompt('Nama variabel baru (contoh: lives, level, speed):');
     if (!varName || !varName.trim()) return;
     const clean = varName.trim();
     setProject((prev) => ({
@@ -257,7 +291,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
   };
 
   const handleCreateBroadcast = () => {
-    const msgName = window.prompt('Masukkan nama pesan Broadcast baru (contoh: boss_spawn, menang):');
+    const msgName = window.prompt('Nama pesan Broadcast baru (contoh: level_up, boss_spawn):');
     if (!msgName || !msgName.trim()) return;
     const clean = msgName.trim();
     setProject((prev) => ({
@@ -322,27 +356,29 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
               ← Kembali
             </button>
           )}
-          <div className="flex items-center space-x-1.5 font-black text-lg tracking-tight bg-white/15 px-2.5 py-1 rounded-md">
+          <div className="flex items-center space-x-1.5 font-black text-base tracking-tight bg-white/15 px-2.5 py-1 rounded-md">
             <span className="text-amber-300">BLOCK</span>
             <span>VERSE</span>
           </div>
 
-          {/* Pemilih Template / Blank Project */}
           <div className="flex items-center bg-white/20 rounded-md px-2 py-1 text-xs">
             <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
             <select
               onChange={(e) => handleSelectTemplate(e.target.value)}
               className="bg-transparent text-white font-semibold outline-none cursor-pointer"
-              defaultValue="blank"
+              defaultValue="star"
             >
+              <option value="star" className="text-slate-900">
+                ⭐ Game: Cat & Star Catcher
+              </option>
               <option value="blank" className="text-slate-900">
                 🆕 Blank Project (Bebas)
               </option>
               <option value="coin" className="text-slate-900">
-                🪙 Preset: Coin Hunter RPG
+                🪙 Game: Coin Hunter RPG
               </option>
               <option value="space" className="text-slate-900">
-                👾 Preset: Space Invaders
+                👾 Game: Space Invaders
               </option>
             </select>
           </div>
@@ -351,7 +387,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             type="text"
             value={project.title}
             onChange={(e) => setProject({ ...project, title: e.target.value })}
-            className="bg-white/20 hover:bg-white/30 focus:bg-white focus:text-slate-900 text-white font-semibold px-3 py-1 rounded-md text-sm outline-none transition w-48"
+            className="bg-white/20 hover:bg-white/30 focus:bg-white focus:text-slate-900 text-white font-semibold px-3 py-1 rounded-md text-sm outline-none transition w-44"
             placeholder="Judul Game..."
           />
 
@@ -364,20 +400,16 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
           </button>
         </div>
 
+        {/* Sisi Kanan Header diberi jarak aman agar tidak bertabrakan dengan tombol Switch Editor */}
         <div className="flex items-center space-x-2">
-          <button
-            onClick={handleCreateVariable}
-            className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-md font-semibold flex items-center gap-1"
-          >
-            <PlusCircle className="w-3.5 h-3.5" /> + Variable
-          </button>
-          <button
-            onClick={handleCreateBroadcast}
-            className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-md font-semibold flex items-center gap-1"
-          >
-            <PlusCircle className="w-3.5 h-3.5" /> + Broadcast
-          </button>
-
+          {onSwitchToClassic && (
+            <button
+              onClick={onSwitchToClassic}
+              className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-md text-white transition"
+            >
+              Classic Editor
+            </button>
+          )}
           {saveStatus && (
             <span className="text-xs bg-emerald-500/90 px-2.5 py-1 rounded flex items-center gap-1 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -386,7 +418,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
           )}
           <button
             onClick={() => handleSaveToCloud(false)}
-            className="text-xs font-semibold hover:bg-white/20 px-3 py-1.5 rounded-md flex items-center gap-1.5 transition"
+            className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-md flex items-center gap-1.5 transition"
           >
             <Save className="w-4 h-4" />
             Save Now
@@ -427,6 +459,22 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
           >
             <Volume2 className="w-4 h-4" /> Sounds
           </button>
+
+          {/* Tombol + Variable & + Broadcast dipindah ke Baris Sub-Header agar tidak ketutupan */}
+          <div className="flex items-center space-x-1.5 pl-3">
+            <button
+              onClick={handleCreateVariable}
+              className="text-[11px] bg-[#FF8C1A] hover:bg-[#e67e17] text-white px-2.5 py-1 rounded-md font-bold flex items-center gap-1 shadow-sm transition"
+            >
+              <PlusCircle className="w-3 h-3" /> + Variable
+            </button>
+            <button
+              onClick={handleCreateBroadcast}
+              className="text-[11px] bg-[#FFBF00] hover:bg-amber-500 text-slate-900 px-2.5 py-1 rounded-md font-bold flex items-center gap-1 shadow-sm transition"
+            >
+              <PlusCircle className="w-3 h-3" /> + Broadcast
+            </button>
+          </div>
         </div>
 
         <div className="w-[496px] flex items-center justify-between px-1">
@@ -434,9 +482,9 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             <button
               onClick={() => runtimeRef.current?.start()}
               title="Start Game (Green Flag)"
-              className="p-1.5 rounded hover:bg-emerald-100 text-emerald-600 transition"
+              className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition"
             >
-              <Flag className="w-5 h-5 fill-emerald-500" />
+              <Flag className="w-3.5 h-3.5 fill-white" /> Play
             </button>
             <button
               onClick={() => runtimeRef.current?.stop()}
@@ -462,14 +510,16 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
               <StickyNote className="w-3.5 h-3.5" /> + Comment
             </button>
           </div>
+          <span className="text-[11px] text-slate-500 font-medium">
+            💡 Drag sprite di layar untuk atur posisi
+          </span>
         </div>
       </div>
 
       {/* ==================== MAIN STUDIO WORKSPACE & RIGHT STAGE ==================== */}
       <div className="flex-1 flex overflow-hidden">
-        {/* KIRI: Category Rail */}
         {activeTab === 'code' && (
-          <div className="w-16 bg-white border-r border-slate-300 flex flex-col items-center py-3 space-y-3 z-10">
+          <div className="w-16 bg-white border-r border-slate-300 flex flex-col items-center py-2.5 space-y-2.5 z-10">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
@@ -490,9 +540,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
           </div>
         )}
 
-        {/* TENGAH: Blockly Canvas ATAU Editor Kostum & Latar Belakang */}
         <div className="flex-1 relative bg-[#F9F9F9] border-r border-slate-300 overflow-hidden">
-          {/* Workspace Blockly (Tetap dirender agar state tidak hilang saat pindah tab) */}
           <div
             ref={blocklyDivRef}
             className={`w-full h-full ${activeTab === 'code' ? 'block' : 'hidden'}`}
@@ -542,7 +590,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
 
               <hr className="border-slate-200" />
 
-              {/* Pengaturan Tema Latar Belakang Stage */}
               <div>
                 <h3 className="text-base font-bold text-slate-800 mb-2">
                   Tema Latar Belakang Stage (Backdrop)
@@ -593,7 +640,44 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             </div>
           )}
 
-          {/* Watermark Sprite Aktif */}
+          {/* TAB SOUNDS SYNTHESIZER */}
+          {activeTab === 'sounds' && (
+            <div className="p-6 h-full overflow-y-auto bg-white space-y-4">
+              <h2 className="text-base font-bold text-slate-800">
+                Built-in Game Sound Effects (Web Audio Synthesizer)
+              </h2>
+              <p className="text-xs text-slate-500">
+                Klik tombol Play untuk mencoba efek suara. Gunakan blok <b className="text-[#CF63CF]">play sound [...]</b> di kategori <b>Sound</b> untuk memutar suara saat game berjalan.
+              </p>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+                {[
+                  { id: 'coin', name: '🪙 Coin / Point', desc: 'Suara saat mengambil koin atau bintang' },
+                  { id: 'jump', name: '🦘 Jump / Boing', desc: 'Suara saat karakter melompat' },
+                  { id: 'laser', name: '⚡ Laser / Shoot', desc: 'Suara tembakan peluru atau laser' },
+                  { id: 'hit', name: '💥 Explosion / Hit', desc: 'Suara tabrakan bom atau musuh' },
+                  { id: 'win', name: '🏆 Powerup / Win', desc: 'Suara menang atau naik level' },
+                ].map((snd) => (
+                  <div
+                    key={snd.id}
+                    className="border border-slate-200 rounded-xl p-4 flex flex-col justify-between bg-slate-50/60"
+                  >
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800">{snd.name}</h4>
+                      <p className="text-[11px] text-slate-500 mt-1">{snd.desc}</p>
+                    </div>
+                    <button
+                      onClick={() => playSynthSound(snd.id)}
+                      className="mt-3 bg-[#CF63CF] hover:bg-[#b852b8] text-white text-xs font-bold py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-white" /> Test Sound
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'code' && (
             <div className="absolute top-4 right-5 pointer-events-none opacity-25 flex flex-col items-center">
               <span className="text-5xl">{activeSprite.costumeEmoji}</span>
@@ -603,7 +687,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             </div>
           )}
 
-          {/* Sticky Notes Kuning */}
           {activeTab === 'code' &&
             comments.map((note) => (
               <div
@@ -641,7 +724,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
 
         {/* KANAN: Live Stage (480x360) + Sprite Inspector + Sprite Selector Grid */}
         <div className="w-[496px] bg-[#E5F0FF] p-2 flex flex-col space-y-2 overflow-y-auto">
-          <div className="bg-black rounded-lg overflow-hidden border border-slate-300 shadow-sm flex items-center justify-center">
+          <div className="bg-black rounded-lg overflow-hidden border border-slate-300 shadow-sm flex items-center justify-center cursor-grab active:cursor-grabbing">
             <canvas
               ref={stageCanvasRef}
               width={480}
@@ -650,7 +733,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             />
           </div>
 
-          {/* Sprite Inspector Bar */}
           <div className="bg-white rounded-lg p-3 border border-slate-300 text-xs space-y-2.5 shadow-sm">
             <div className="flex items-center space-x-3">
               <div className="flex items-center space-x-1.5 flex-1">
@@ -739,7 +821,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             </div>
           </div>
 
-          {/* Kartu Daftar Sprite + Tombol Tambah Sprite */}
           <div className="flex-1 bg-white rounded-lg p-3 border border-slate-300 relative overflow-y-auto">
             <div className="grid grid-cols-5 gap-2.5">
               {project.sprites.map((sp) => {
@@ -778,7 +859,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             </div>
 
             <button
-              onClick={() => handleAddSprite('🐱')}
+              onClick={() => handleAddSprite('⭐')}
               title="Tambah Sprite Baru"
               className="fixed bottom-5 right-5 bg-[#4C97FF] hover:bg-[#3b82f6] text-white p-3 rounded-full shadow-lg transition"
             >

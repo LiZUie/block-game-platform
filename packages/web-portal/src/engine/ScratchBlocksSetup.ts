@@ -2,28 +2,42 @@
 import * as Blockly from 'blockly';
 import { CompiledOp, CompiledScript } from './BlockVerseEngine';
 
-// Konteks dinamis yang selalu disinkronkan dengan state Project aktif
 interface StudioDynamicContext {
+  activeSpriteName: string;
   spriteNames: string[];
   variableNames: string[];
   broadcastMessages: string[];
 }
 
 const dynamicContext: StudioDynamicContext = {
+  activeSpriteName: 'Hero',
   spriteNames: ['Hero'],
   variableNames: ['score'],
-  broadcastMessages: ['message1', 'game over'],
+  broadcastMessages: ['message1', 'game over', 'win'],
 };
 
 export function updateStudioDynamicContext(ctx: Partial<StudioDynamicContext>) {
+  if (ctx.activeSpriteName) dynamicContext.activeSpriteName = ctx.activeSpriteName;
   if (ctx.spriteNames && ctx.spriteNames.length > 0) dynamicContext.spriteNames = ctx.spriteNames;
   if (ctx.variableNames && ctx.variableNames.length > 0) dynamicContext.variableNames = ctx.variableNames;
   if (ctx.broadcastMessages && ctx.broadcastMessages.length > 0) dynamicContext.broadcastMessages = ctx.broadcastMessages;
 }
 
-const getSpriteDropdownOptions = (): [string, string][] => {
-  const sprites = dynamicContext.spriteNames.map((name) => [name, name] as [string, string]);
-  return [...sprites, ['edge', '_edge_'], ['mouse-pointer', '_mouse_']];
+const getTouchingDropdownOptions = (): [string, string][] => {
+  // Prioritaskan sprite selain diri sendiri agar tidak default "touching Hero?" saat di Hero
+  const others = dynamicContext.spriteNames
+    .filter((name) => name !== dynamicContext.activeSpriteName)
+    .map((name) => [name, name] as [string, string]);
+  const self = dynamicContext.spriteNames
+    .filter((name) => name === dynamicContext.activeSpriteName)
+    .map((name) => [name, name] as [string, string]);
+
+  return [
+    ...others,
+    ['mouse-pointer', '_mouse_'],
+    ['edge', '_edge_'],
+    ...self,
+  ];
 };
 
 const getCloneDropdownOptions = (): [string, string][] => {
@@ -45,12 +59,11 @@ export function registerScratchBlocks() {
   if (blocksRegistered) return;
   blocksRegistered = true;
 
-  // Blok dengan Dropdown Dinamis
   Blockly.Blocks['sensing_touchingobject'] = {
     init: function () {
       this.appendDummyInput()
         .appendField('touching')
-        .appendField(new Blockly.FieldDropdown(getSpriteDropdownOptions), 'TOUCHINGOBJECTMENU')
+        .appendField(new Blockly.FieldDropdown(getTouchingDropdownOptions), 'TOUCHINGOBJECTMENU')
         .appendField('?');
       this.setOutput(true, 'Boolean');
       this.setColour('#5CB1D6');
@@ -124,7 +137,6 @@ export function registerScratchBlocks() {
     },
   };
 
-  // Blok Standar Lainnya (Motion, Looks, Events, Control, Sensing, Operators)
   Blockly.defineBlocksWithJsonArray([
     // EVENTS
     {
@@ -308,6 +320,28 @@ export function registerScratchBlocks() {
       colour: '#9966FF',
     },
 
+    // SOUND (Kategori Baru Ungu Magenta #CF63CF)
+    {
+      type: 'sound_play',
+      message0: 'play sound %1',
+      args0: [
+        {
+          type: 'field_dropdown',
+          name: 'SOUND_MENU',
+          options: [
+            ['coin / point', 'coin'],
+            ['jump / boing', 'jump'],
+            ['laser / shoot', 'laser'],
+            ['explosion / hit', 'hit'],
+            ['powerup / win', 'win'],
+          ],
+        },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#CF63CF',
+    },
+
     // CONTROL
     {
       type: 'control_wait',
@@ -422,7 +456,7 @@ export function registerScratchBlocks() {
       colour: '#5CB1D6',
     },
 
-    // OPERATORS (Lengkap Matematika + Logika)
+    // OPERATORS
     {
       type: 'operator_add',
       message0: '%1 + %2',
@@ -590,6 +624,9 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     { kind: 'block', type: 'looks_changesizeby', inputs: { CHANGE: { shadow: { type: 'math_number', fields: { NUM: 10 } } } } },
     { kind: 'block', type: 'looks_show' },
     { kind: 'block', type: 'looks_hide' },
+  ],
+  Sound: [
+    { kind: 'block', type: 'sound_play' },
   ],
   Events: [
     { kind: 'block', type: 'event_whenflagclicked' },
@@ -814,6 +851,9 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
       case 'looks_hide':
         ops.push({ op: 'HIDE' });
         break;
+      case 'sound_play':
+        ops.push({ op: 'PLAY_SOUND', sound: current.getFieldValue('SOUND_MENU') });
+        break;
       case 'control_wait':
         ops.push({ op: 'WAIT', seconds: compileInputValue(current.getInputTargetBlock('DURATION')) });
         break;
@@ -913,4 +953,124 @@ export function compileWorkspaceToScripts(workspace: Blockly.WorkspaceSvg): Comp
     }
   }
   return compiled;
+}
+
+// ============================================================================
+// DECOMPILER OTOMATIS: Mengubah CompiledScript[] menjadi Blok Visual di Kanvas
+// ============================================================================
+function valueToXml(val: any, isText: boolean = false): string {
+  if (val === null || val === undefined) {
+    return `<shadow type="math_number"><field name="NUM">0</field></shadow>`;
+  }
+  if (typeof val === 'number') {
+    return `<shadow type="math_number"><field name="NUM">${val}</field></shadow>`;
+  }
+  if (typeof val === 'string') {
+    if (isText) return `<shadow type="text"><field name="TEXT">${val}</field></shadow>`;
+    return `<shadow type="math_number"><field name="NUM">${Number(val) || 0}</field></shadow>`;
+  }
+  if (typeof val === 'object') {
+    switch (val.type) {
+      case 'VAR':
+        return `<block type="data_variable"><field name="VARIABLE">${val.name}</field></block>`;
+      case 'X_POS':
+        return `<block type="motion_xposition"></block>`;
+      case 'Y_POS':
+        return `<block type="motion_yposition"></block>`;
+      case 'RANDOM':
+        return `<block type="operator_random"><value name="FROM">${valueToXml(val.min)}</value><value name="TO">${valueToXml(val.max)}</value></block>`;
+      case 'TOUCHING':
+        return `<block type="sensing_touchingobject"><field name="TOUCHINGOBJECTMENU">${val.target}</field></block>`;
+      case 'KEY_PRESSED':
+        return `<block type="sensing_keypressed"><field name="KEY_OPTION">${val.key}</field></block>`;
+      case 'COMPARE': {
+        const typeMap: Record<string, string> = { LT: 'operator_lt', GT: 'operator_gt', EQ: 'operator_equals' };
+        const bType = typeMap[val.op] || 'operator_lt';
+        return `<block type="${bType}"><value name="OPERAND1">${valueToXml(val.a)}</value><value name="OPERAND2">${valueToXml(val.b)}</value></block>`;
+      }
+    }
+  }
+  return `<shadow type="math_number"><field name="NUM">0</field></shadow>`;
+}
+
+function opsToXmlChain(ops: CompiledOp[], index: number = 0): string {
+  if (!ops || index >= ops.length) return '';
+  const op = ops[index];
+  const nextXml = index + 1 < ops.length ? `<next>${opsToXmlChain(ops, index + 1)}</next>` : '';
+
+  switch (op.op) {
+    case 'MOVE_STEPS':
+      return `<block type="motion_movesteps"><value name="STEPS">${valueToXml(op.steps)}</value>${nextXml}</block>`;
+    case 'GOTO_XY':
+      return `<block type="motion_gotoxy"><value name="X">${valueToXml(op.x)}</value><value name="Y">${valueToXml(op.y)}</value>${nextXml}</block>`;
+    case 'GOTO_RANDOM':
+      return `<block type="motion_gotorandom">${nextXml}</block>`;
+    case 'CHANGE_X':
+      return `<block type="motion_changexby"><value name="DX">${valueToXml(op.dx)}</value>${nextXml}</block>`;
+    case 'SET_X':
+      return `<block type="motion_setx"><value name="X">${valueToXml(op.x)}</value>${nextXml}</block>`;
+    case 'CHANGE_Y':
+      return `<block type="motion_changeyby"><value name="DY">${valueToXml(op.dy)}</value>${nextXml}</block>`;
+    case 'SET_Y':
+      return `<block type="motion_sety"><value name="Y">${valueToXml(op.y)}</value>${nextXml}</block>`;
+    case 'IF_ON_EDGE_BOUNCE':
+      return `<block type="motion_ifonedgebounce">${nextXml}</block>`;
+    case 'SAY':
+      return `<block type="looks_sayforsecs"><value name="MESSAGE">${valueToXml(op.text, true)}</value><value name="SECS">${valueToXml(op.seconds)}</value>${nextXml}</block>`;
+    case 'SET_SIZE':
+      return `<block type="looks_setsizeto"><value name="SIZE">${valueToXml(op.size)}</value>${nextXml}</block>`;
+    case 'SHOW':
+      return `<block type="looks_show">${nextXml}</block>`;
+    case 'HIDE':
+      return `<block type="looks_hide">${nextXml}</block>`;
+    case 'PLAY_SOUND':
+      return `<block type="sound_play"><field name="SOUND_MENU">${op.sound || 'coin'}</field>${nextXml}</block>`;
+    case 'WAIT':
+      return `<block type="control_wait"><value name="DURATION">${valueToXml(op.seconds)}</value>${nextXml}</block>`;
+    case 'SET_VAR':
+      return `<block type="data_setvariableto"><field name="VARIABLE">${op.varName}</field><value name="VALUE">${valueToXml(op.value)}</value>${nextXml}</block>`;
+    case 'CHANGE_VAR':
+      return `<block type="data_changevariableby"><field name="VARIABLE">${op.varName}</field><value name="VALUE">${valueToXml(op.delta)}</value>${nextXml}</block>`;
+    case 'REPEAT':
+      return `<block type="control_repeat"><value name="TIMES">${valueToXml(op.times)}</value><statement name="SUBSTACK">${opsToXmlChain(op.substack || [], 0)}</statement>${nextXml}</block>`;
+    case 'FOREVER':
+      return `<block type="control_forever"><statement name="SUBSTACK">${opsToXmlChain(op.substack || [], 0)}</statement>${nextXml}</block>`;
+    case 'IF':
+      return `<block type="control_if"><value name="CONDITION">${valueToXml(op.condition)}</value><statement name="SUBSTACK">${opsToXmlChain(op.substack || [], 0)}</statement>${nextXml}</block>`;
+    case 'CREATE_CLONE':
+      return `<block type="control_create_clone_of"><field name="CLONE_OPTION">${op.target}</field>${nextXml}</block>`;
+    case 'DELETE_CLONE':
+      return `<block type="control_delete_this_clone">${nextXml}</block>`;
+    case 'STOP_ALL':
+      return `<block type="control_stop_all">${nextXml}</block>`;
+    case 'BROADCAST':
+      return `<block type="event_broadcast"><field name="MESSAGE">${op.message}</field>${nextXml}</block>`;
+    case 'SUBMIT_SCORE':
+      return `<block type="cloud_submit_score"><value name="SCORE">${valueToXml(op.score)}</value>${nextXml}</block>`;
+    default:
+      return opsToXmlChain(ops, index + 1);
+  }
+}
+
+export function scriptsToBlocklyXml(scripts: CompiledScript[]): string {
+  let blocksXml = '';
+  let offsetX = 25;
+
+  for (const script of scripts) {
+    const chain = opsToXmlChain(script.ops, 0);
+    const nextWrap = chain ? `<next>${chain}</next>` : '';
+
+    if (script.trigger === 'WHEN_FLAG_CLICKED') {
+      blocksXml += `<block type="event_whenflagclicked" x="${offsetX}" y="25">${nextWrap}</block>`;
+    } else if (script.trigger === 'WHEN_KEY_PRESSED') {
+      blocksXml += `<block type="event_whenkeypressed" x="${offsetX}" y="25"><field name="KEY">${script.param || 'space'}</field>${nextWrap}</block>`;
+    } else if (script.trigger === 'WHEN_CLONE_START') {
+      blocksXml += `<block type="control_start_as_clone" x="${offsetX}" y="25">${nextWrap}</block>`;
+    } else if (script.trigger === 'WHEN_RECEIVE') {
+      blocksXml += `<block type="event_whenireceive" x="${offsetX}" y="25"><field name="MESSAGE">${script.param || 'message1'}</field>${nextWrap}</block>`;
+    }
+    offsetX += 310;
+  }
+
+  return `<xml xmlns="https://developers.google.com/blockly/xml">${blocksXml}</xml>`;
 }
