@@ -89,44 +89,20 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
           )}
         </nav>
 
-        {/* User Info & Quick Demo Switcher */}
+        {/* User Info & Logout (Hapus Uji Role Switcher) */}
         <div className="flex items-center gap-3">
-          {/* Quick Demo Switcher */}
-          <div className="hidden lg:flex items-center gap-1.5 bg-slate-950/80 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
-            <span className="text-slate-400 flex items-center gap-1 font-mono text-[11px]"><Sparkles size={12} className="text-amber-400" /> Uji Role:</span>
-            <button
-              onClick={() => switchQuickDemo(UserRole.ADMIN)}
-              className={`px-2 py-0.5 rounded font-bold transition-all ${user?.role === UserRole.ADMIN ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            >
-              Admin
-            </button>
-            <button
-              onClick={() => switchQuickDemo(UserRole.DEVELOPER)}
-              className={`px-2 py-0.5 rounded font-bold transition-all ${user?.role === UserRole.DEVELOPER ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            >
-              Developer
-            </button>
-            <button
-              onClick={() => switchQuickDemo(UserRole.PLAYER)}
-              className={`px-2 py-0.5 rounded font-bold transition-all ${user?.role === UserRole.PLAYER ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-            >
-              Player
-            </button>
-          </div>
-
-          {/* Profile Badge & Logout */}
           {user && (
-            <div className="flex items-center gap-3 pl-2">
+            <div className="flex items-center gap-3">
               {getRoleBadge(user.role)}
               <span className="text-sm font-semibold text-slate-200 hidden sm:inline">{user.username}</span>
 
               {/* Tombol Logout */}
               <button
                 onClick={logout}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold transition-all shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold transition-all shadow-sm"
                 title="Keluar dari akun (Logout)"
               >
-                <LogOut size={13} />
+                <LogOut size={14} />
                 <span>Logout</span>
               </button>
             </div>

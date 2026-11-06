@@ -328,45 +328,83 @@ export class GameRunner {
       this.ctx.stroke();
     }
 
-    // 3. Draw Entities (Keys, Gems, Doors, Walls, Food)
+    // 3. Draw Entities (Keys, Gems, Doors, Walls, Food, Hazards)
     for (const entity of this.runtimeEntities) {
       if (entity.collected || entity.type === 'player') continue;
       const { x, y } = entity.currentPos;
-      this.ctx.fillStyle = entity.color || '#FACC15';
 
-      if (entity.shape === 'circle' || entity.type === 'food') {
+      if (entity.type === 'key' || entity.shape === 'diamond') {
+        // --- Gambar Kunci Emas Asli (Golden Key Sprite) ---
+        this.ctx.fillStyle = '#FACC15'; // Emas cerah
+        // Kepala ring kunci
+        this.ctx.beginPath();
+        this.ctx.arc(x + 7, y + 7, 5, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#0f172a'; // Lubang kunci
+        this.ctx.beginPath();
+        this.ctx.arc(x + 7, y + 7, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        // Batang kunci & gerigi
+        this.ctx.fillStyle = '#EAB308';
+        this.ctx.fillRect(x + 10, y + 6, 8, 2.5);
+        this.ctx.fillRect(x + 14, y + 8.5, 2.5, 3.5);
+        this.ctx.fillRect(x + 17, y + 8.5, 2.5, 2.5);
+
+      } else if (entity.type === 'treasure' || entity.shape === 'star') {
+        // --- Gambar Peti Harta Karun (Treasure Chest Sprite) ---
+        this.ctx.fillStyle = '#78350F'; // Kayu peti
+        this.ctx.fillRect(x + 2, y + 5, 16, 12);
+        this.ctx.fillStyle = '#F59E0B'; // Sabuk emas
+        this.ctx.fillRect(x + 2, y + 9, 16, 2.5);
+        this.ctx.fillRect(x + 8, y + 8, 4, 4); // Gembok
+        this.ctx.fillStyle = '#451A03'; // Garis tutup
+        this.ctx.fillRect(x + 2, y + 4, 16, 2);
+
+      } else if (entity.type === 'door' || entity.shape === 'door') {
+        // --- Gambar Pintu Gerbang Kastil / Portal (Door Sprite) ---
+        this.ctx.fillStyle = '#475569'; // Kusen batu
+        this.ctx.fillRect(x + 1, y + 1, 18, 18);
+        this.ctx.fillStyle = '#9333EA'; // Cahaya portal magis ungu
+        this.ctx.fillRect(x + 3, y + 4, 14, 15);
+        this.ctx.fillStyle = '#E9D5FF'; // Kilauan portal
+        this.ctx.fillRect(x + 6, y + 7, 8, 9);
+
+      } else if (entity.type === 'hazard') {
+        // --- Gambar Jebakan Duri (Spike Trap Sprite) ---
+        this.ctx.fillStyle = '#EF4444'; // Merah bahaya
+        // 3 Segitiga Duri Tajam
+        for (let i = 0; i < 3; i++) {
+          const sx = x + 3 + (i * 5);
+          this.ctx.beginPath();
+          this.ctx.moveTo(sx, y + 17);
+          this.ctx.lineTo(sx + 2.5, y + 3);
+          this.ctx.lineTo(sx + 5, y + 17);
+          this.ctx.closePath();
+          this.ctx.fill();
+        }
+
+      } else if (entity.type === 'obstacle' || entity.shape === 'wall' || entity.isSolid) {
+        // --- Gambar Dinding Tembok Batu Bata (Stone Brick Wall) ---
+        this.ctx.fillStyle = '#334155'; // Latar batu
+        this.ctx.fillRect(x, y, gridSize, gridSize);
+        this.ctx.strokeStyle = '#1E293B'; // Semen
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(x, y, gridSize, gridSize);
+        this.ctx.fillStyle = '#475569'; // Bata atas
+        this.ctx.fillRect(x + 1, y + 1, gridSize / 2 - 2, gridSize / 2 - 2);
+        this.ctx.fillRect(x + gridSize / 2 + 1, y + 1, gridSize / 2 - 2, gridSize / 2 - 2);
+        this.ctx.fillRect(x + 3, y + gridSize / 2 + 1, gridSize - 6, gridSize / 2 - 2);
+
+      } else if (entity.shape === 'circle' || entity.type === 'food') {
+        // Apel
+        this.ctx.fillStyle = entity.color || '#EF4444';
         this.ctx.beginPath();
         this.ctx.arc(x + gridSize / 2, y + gridSize / 2, gridSize / 2 - 2, 0, Math.PI * 2);
         this.ctx.fill();
-      } else if (entity.shape === 'diamond' || entity.type === 'key') {
-        // Diamond Key
-        this.ctx.beginPath();
-        this.ctx.moveTo(x + gridSize / 2, y + 2);
-        this.ctx.lineTo(x + gridSize - 2, y + gridSize / 2);
-        this.ctx.lineTo(x + gridSize / 2, y + gridSize - 2);
-        this.ctx.lineTo(x + 2, y + gridSize / 2);
-        this.ctx.closePath();
-        this.ctx.fill();
-      } else if (entity.shape === 'star' || entity.type === 'treasure') {
-        // Star Gem
-        this.ctx.beginPath();
-        this.ctx.arc(x + gridSize / 2, y + gridSize / 2, gridSize / 2 - 3, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.fillStyle = '#FFFFFF';
-        this.ctx.fillRect(x + gridSize / 2 - 2, y + gridSize / 2 - 2, 4, 4);
-      } else if (entity.shape === 'door' || entity.type === 'door') {
-        // Portal Door
-        this.ctx.fillRect(x + 2, y + 2, gridSize - 4, gridSize - 4);
-        this.ctx.fillStyle = '#F3E8FF';
-        this.ctx.fillRect(x + 5, y + 5, gridSize - 10, gridSize - 10);
-      } else if (entity.shape === 'wall' || entity.isSolid) {
-        // Solid Wall
-        this.ctx.fillStyle = entity.color || '#334155';
-        this.ctx.fillRect(x, y, gridSize, gridSize);
-        this.ctx.strokeStyle = '#475569';
-        this.ctx.strokeRect(x + 1, y + 1, gridSize - 2, gridSize - 2);
+        this.ctx.fillStyle = '#15803D'; // Tangkai daun
+        this.ctx.fillRect(x + gridSize / 2 - 1, y + 2, 2, 3);
       } else {
-        // Standard Square
+        this.ctx.fillStyle = entity.color || '#FACC15';
         this.ctx.fillRect(x + 1, y + 1, gridSize - 2, gridSize - 2);
       }
     }
@@ -383,26 +421,69 @@ export class GameRunner {
       this.ctx.globalAlpha = 1.0;
     }
 
-    // 5. Draw Player Character
+    // 5. Draw Player Character (Sprite Karakter Orang / Ular)
     const playerEntity = this.runtimeEntities.find(e => e.type === 'player');
-    this.ctx.fillStyle = playerEntity?.color || (isSnake ? '#34D399' : '#38BDF8');
-    this.ctx.fillRect(this.playerPos.x + 1, this.playerPos.y + 1, gridSize - 2, gridSize - 2);
+    const px = this.playerPos.x;
+    const py = this.playerPos.y;
 
-    // Player Eyes
-    this.ctx.fillStyle = '#064E3B';
-    const eyeSize = 3;
-    if (this.direction === 'RIGHT') {
-      this.ctx.fillRect(this.playerPos.x + gridSize - 6, this.playerPos.y + 4, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerPos.x + gridSize - 6, this.playerPos.y + gridSize - 7, eyeSize, eyeSize);
-    } else if (this.direction === 'LEFT') {
-      this.ctx.fillRect(this.playerPos.x + 3, this.playerPos.y + 4, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerPos.x + 3, this.playerPos.y + gridSize - 7, eyeSize, eyeSize);
-    } else if (this.direction === 'UP') {
-      this.ctx.fillRect(this.playerPos.x + 4, this.playerPos.y + 3, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerPos.x + gridSize - 7, this.playerPos.y + 3, eyeSize, eyeSize);
+    if (!isSnake) {
+      // --- GAMBAR KARAKTER ORANG PETUALANG (Human Hero 2D Sprite) ---
+      // 1. Kaki & Sepatu
+      this.ctx.fillStyle = '#1E293B';
+      this.ctx.fillRect(px + 4, py + 15, 4, 4);
+      this.ctx.fillRect(px + 12, py + 15, 4, 4);
+
+      // 2. Jubah / Baju Petualang
+      this.ctx.fillStyle = playerEntity?.color || '#0284C7';
+      this.ctx.fillRect(px + 4, py + 8, 12, 8);
+      // Sabuk emas
+      this.ctx.fillStyle = '#F59E0B';
+      this.ctx.fillRect(px + 4, py + 12, 12, 2);
+
+      // 3. Kepala & Wajah (Warna Kulit)
+      this.ctx.fillStyle = '#FED7AA';
+      this.ctx.fillRect(px + 5, py + 3, 10, 7);
+
+      // 4. Topi / Helm Petualang
+      this.ctx.fillStyle = '#B45309';
+      this.ctx.fillRect(px + 4, py + 1, 12, 3);
+      this.ctx.fillRect(px + 3, py + 3, 14, 2);
+
+      // 5. Mata Karakter menatap ke arah gerak
+      this.ctx.fillStyle = '#0F172A';
+      if (this.direction === 'RIGHT') {
+        this.ctx.fillRect(px + 11, py + 5, 2, 2);
+      } else if (this.direction === 'LEFT') {
+        this.ctx.fillRect(px + 7, py + 5, 2, 2);
+      } else if (this.direction === 'UP') {
+        this.ctx.fillRect(px + 7, py + 4, 2, 2);
+        this.ctx.fillRect(px + 11, py + 4, 2, 2);
+      } else {
+        this.ctx.fillRect(px + 7, py + 6, 2, 2);
+        this.ctx.fillRect(px + 11, py + 6, 2, 2);
+      }
+
     } else {
-      this.ctx.fillRect(this.playerPos.x + 4, this.playerPos.y + gridSize - 6, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerPos.x + gridSize - 7, this.playerPos.y + gridSize - 6, eyeSize, eyeSize);
+      // --- Mode Ular Tradisional ---
+      this.ctx.fillStyle = playerEntity?.color || '#34D399';
+      this.ctx.fillRect(px + 1, py + 1, gridSize - 2, gridSize - 2);
+
+      // Mata Ular
+      this.ctx.fillStyle = '#064E3B';
+      const eyeSize = 3;
+      if (this.direction === 'RIGHT') {
+        this.ctx.fillRect(px + gridSize - 6, py + 4, eyeSize, eyeSize);
+        this.ctx.fillRect(px + gridSize - 6, py + gridSize - 7, eyeSize, eyeSize);
+      } else if (this.direction === 'LEFT') {
+        this.ctx.fillRect(px + 3, py + 4, eyeSize, eyeSize);
+        this.ctx.fillRect(px + 3, py + gridSize - 7, eyeSize, eyeSize);
+      } else if (this.direction === 'UP') {
+        this.ctx.fillRect(px + 4, py + 3, eyeSize, eyeSize);
+        this.ctx.fillRect(px + gridSize - 7, py + 3, eyeSize, eyeSize);
+      } else {
+        this.ctx.fillRect(px + 4, py + gridSize - 6, eyeSize, eyeSize);
+        this.ctx.fillRect(px + gridSize - 7, py + gridSize - 6, eyeSize, eyeSize);
+      }
     }
 
     // 6. Win Overlay

@@ -3,180 +3,289 @@ import { useAuth } from '../context/AuthContext';
 import { UserRole, GameManifest, BlockNode, EntityConfig } from '@blockgame/shared';
 import { api } from '../services/api';
 import { GameRunner } from '../engine/GameRunner';
-import { Code2, Play, UploadCloud, Layers, Cpu, CheckCircle2, AlertTriangle, Sparkles, RefreshCw, Compass, Puzzle, Gamepad2 } from 'lucide-react';
+import { 
+  Play, Square, UploadCloud, CheckCircle2, 
+  Trash2, Plus, RefreshCw, Volume2, 
+  MousePointer, Zap, Compass, Sparkles, 
+  Eye, EyeOff, Layers, Code, Flag, Settings2
+} from 'lucide-react';
 
 interface StudioViewProps {
   onGamePublished: (gameId: string) => void;
 }
 
-type TemplateType = 'adventure' | 'puzzle' | 'snake';
+type BlockCategory = 'events' | 'motion' | 'looks' | 'sound' | 'control' | 'sensing' | 'variables';
+
+interface ScratchBlockItem {
+  id: string;
+  category: BlockCategory;
+  text: string;
+  color: string;
+  type: string;
+  params: Record<string, any>;
+  shape: 'hat' | 'stack' | 'cap';
+}
 
 export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
-  const { user, switchQuickDemo } = useAuth();
+  const { user } = useAuth();
 
-  // If Player, block access per RBAC
-  if (user?.role === UserRole.PLAYER) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-24 text-center space-y-6">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center">
-          <AlertTriangle size={32} />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-white">Akses Terbatas: Hanya Developer</h2>
-          <p className="text-sm text-slate-400 max-w-md mx-auto">
-            Anda sedang login dengan peran <strong>Player</strong>. Sesuai arsitektur sistem, hanya akun ber-role <strong>Developer</strong> atau <strong>Admin</strong> yang memiliki izin membuat game di Studio.
-          </p>
-        </div>
+  // Active Category on Left Palette
+  const [activeCategory, setActiveCategory] = useState<BlockCategory>('events');
 
-        <div className="pt-2">
-          <button
-            onClick={() => switchQuickDemo(UserRole.DEVELOPER)}
-            className="inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-lg shadow-sky-600/30 transition-all"
-          >
-            <Sparkles size={16} />
-            <span>Ganti ke Akun Demo Developer</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Active Template
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateType>('adventure');
-  const [activeTab, setActiveTab] = useState<'blocks' | 'canvas' | 'preview'>('blocks');
-
-  // Game Meta
-  const [title, setTitle] = useState('Petualangan Labirin Gua (2D Adventure)');
-  const [description, setDescription] = useState('Temukan kunci emas untuk membuka portal portal keluar, hindari jebakan!');
-  const [category, setCategory] = useState<'adventure' | 'puzzle' | 'classic' | 'arcade'>('adventure');
-
-  // Canvas Settings
-  const [canvasConfig, setCanvasConfig] = useState({
-    width: 400,
-    height: 400,
-    gridSize: 20,
-    backgroundColor: '#090d16',
-    tickRateMs: 0,
-    gameMode: 'adventure' as any
-  });
-
-  // Entity Customizations
-  const [heroColor, setHeroColor] = useState('#38bdf8');
-  const [targetColor, setTargetColor] = useState('#facc15');
-  const [doorColor, setDoorColor] = useState('#a855f7');
-  const [hazardColor, setHazardColor] = useState('#ef4444');
-  const [scoreReward, setScoreReward] = useState(50);
-  const [winMessage, setWinMessage] = useState('Selamat! Kamu berhasil menyelesaikan petualangan ini!');
-
-  // Playtest Simulator
-  const testCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const testRunnerRef = useRef<GameRunner | null>(null);
-  const [isPublishing, setIsPublishing] = useState(false);
+  // Project Info
+  const [projectTitle, setProjectTitle] = useState('Petualangan Kesatria 2D');
+  const [projectDesc, setProjectDesc] = useState('Dibuat dengan Scratch Block Studio di BlockVerse');
+  
+  // Game Canvas State
+  const [canvasWidth] = useState(400);
+  const [canvasHeight] = useState(400);
+  const [gridSize] = useState(20);
+  const [score, setScore] = useState(0);
+  const [isLiveRunning, setIsLiveRunning] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
-  // Switch Template handler
-  const handleSelectTemplate = (template: TemplateType) => {
-    setSelectedTemplate(template);
-    if (template === 'adventure') {
-      setTitle('Petualangan Kunci Labirin (2D Dungeon)');
-      setDescription('Jelajahi labirin, ambil kunci emas & koin, dan buka portal keluar!');
-      setCategory('adventure');
-      setCanvasConfig({ width: 400, height: 400, gridSize: 20, backgroundColor: '#090d16', tickRateMs: 0, gameMode: 'adventure' });
-      setHeroColor('#38bdf8');
-      setTargetColor('#facc15');
-      setDoorColor('#a855f7');
-      setScoreReward(50);
-      setWinMessage('Selamat! Kamu berhasil kabur dari labirin bawah tanah!');
-    } else if (template === 'puzzle') {
-      setTitle('Teka-Teki Saklar Ruang (2D Maze Puzzle)');
-      setDescription('Pecahkan labirin dan temukan saklar untuk mengaktifkan portal tujuan!');
-      setCategory('puzzle');
-      setCanvasConfig({ width: 400, height: 400, gridSize: 20, backgroundColor: '#1e1b4b', tickRateMs: 0, gameMode: 'puzzle' });
-      setHeroColor('#a7f3d0');
-      setTargetColor('#f43f5e');
-      setDoorColor('#60a5fa');
-      setScoreReward(100);
-      setWinMessage('Hebat! Teka-teki labirin terpecahkan sempurna!');
-    } else {
-      setTitle('Ular Makan Apel (Classic Arcade 2D)');
-      setDescription('Kendalikan ular untuk memakan apel merah dan bertambah panjang!');
-      setCategory('classic');
-      setCanvasConfig({ width: 400, height: 400, gridSize: 20, backgroundColor: '#111827', tickRateMs: 140, gameMode: 'snake' });
-      setHeroColor('#10b981');
-      setTargetColor('#ef4444');
-      setDoorColor('#a855f7');
-      setScoreReward(10);
-      setWinMessage('Skor tertinggi tercapai!');
+  // Sprites List (Karakter Orang, Kunci, Pintu, Harta, Duri)
+  const [sprites, setSprites] = useState<EntityConfig[]>([
+    {
+      id: 'entity_hero',
+      name: 'Hero (Ksatria)',
+      type: 'player',
+      shape: 'square',
+      color: '#0284C7',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 40, y: 40 },
+      isSolid: false
+    },
+    {
+      id: 'entity_key',
+      name: 'Kunci Gerbang',
+      type: 'key',
+      shape: 'diamond',
+      color: '#FACC15',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 340, y: 40 },
+      isSolid: false
+    },
+    {
+      id: 'entity_door',
+      name: 'Pintu Gerbang',
+      type: 'door',
+      shape: 'door',
+      color: '#9333EA',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 340, y: 340 },
+      isSolid: false
+    },
+    {
+      id: 'entity_chest',
+      name: 'Peti Harta Karun',
+      type: 'treasure',
+      shape: 'star',
+      color: '#F59E0B',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 40, y: 340 },
+      isSolid: false
+    },
+    {
+      id: 'entity_trap',
+      name: 'Jebakan Duri',
+      type: 'hazard',
+      shape: 'square',
+      color: '#EF4444',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 200, y: 140 },
+      isSolid: false
     }
-  };
+  ]);
 
-  // Build full GameManifest based on active template
+  const [selectedSpriteId, setSelectedSpriteId] = useState('entity_hero');
+  const selectedSprite = sprites.find(s => s.id === selectedSpriteId) || sprites[0];
+
+  // Active Script Blocks in Workspace (Scratch-like Stacks)
+  const [workspaceBlocks, setWorkspaceBlocks] = useState<ScratchBlockItem[]>([
+    {
+      id: 'b1',
+      category: 'events',
+      text: 'ketika 🏁 bendera diklik',
+      color: '#FFBF00',
+      type: 'WHEN_GAME_START',
+      params: {},
+      shape: 'hat'
+    },
+    {
+      id: 'b2',
+      category: 'variables',
+      text: 'atur [Skor] ke (0)',
+      color: '#FF8C1A',
+      type: 'SET_VARIABLE',
+      params: { name: 'score', value: 0 },
+      shape: 'stack'
+    },
+    {
+      id: 'b3',
+      category: 'events',
+      text: 'ketika tombol [Panah / WASD] ditekan',
+      color: '#FFBF00',
+      type: 'WHEN_KEY_PRESSED',
+      params: {},
+      shape: 'hat'
+    },
+    {
+      id: 'b4',
+      category: 'motion',
+      text: 'gerak karakter (1) petak di grid',
+      color: '#4C97FF',
+      type: 'MOVE_ENTITY',
+      params: { mode: 'STEP_4WAY' },
+      shape: 'stack'
+    },
+    {
+      id: 'b5',
+      category: 'events',
+      text: 'ketika menyentuh [Kunci Gerbang]',
+      color: '#FFBF00',
+      type: 'ON_COLLISION',
+      params: { entityB: 'entity_key' },
+      shape: 'hat'
+    },
+    {
+      id: 'b6',
+      category: 'variables',
+      text: 'tambah [Skor] sebesar (50)',
+      color: '#FF8C1A',
+      type: 'ADD_SCORE',
+      params: { amount: 50 },
+      shape: 'stack'
+    },
+    {
+      id: 'b7',
+      category: 'looks',
+      text: 'sembunyikan [Kunci Gerbang]',
+      color: '#9966FF',
+      type: 'DESTROY_ENTITY',
+      params: { entityId: 'entity_key' },
+      shape: 'stack'
+    },
+    {
+      id: 'b8',
+      category: 'sound',
+      text: 'bunyikan suara [koin emas]',
+      color: '#CF63CF',
+      type: 'PLAY_SOUND',
+      params: { sound: 'key' },
+      shape: 'stack'
+    },
+    {
+      id: 'b9',
+      category: 'events',
+      text: 'ketika menyentuh [Pintu Gerbang]',
+      color: '#FFBF00',
+      type: 'ON_COLLISION',
+      params: { entityB: 'entity_door' },
+      shape: 'hat'
+    },
+    {
+      id: 'b10',
+      category: 'control',
+      text: 'menang level! [🏆 Selamat Kamu Berhasil Kabur!]',
+      color: '#FFAB19',
+      type: 'WIN_GAME',
+      params: { message: 'Selamat! Kamu berhasil membuka gerbang dan kabur dari labirin!' },
+      shape: 'cap'
+    }
+  ]);
+
+  // Stage Simulator Canvas
+  const stageCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const runnerRef = useRef<GameRunner | null>(null);
+
+  // Available Palette Blocks Library (Scratch 3.0 Compatible Style)
+  const availablePaletteBlocks: ScratchBlockItem[] = [
+    // Motion (Biru)
+    { id: 'p_motion_1', category: 'motion', text: 'gerak karakter (1) petak di grid', color: '#4C97FF', type: 'MOVE_ENTITY', params: { mode: 'STEP_4WAY' }, shape: 'stack' },
+    { id: 'p_motion_2', category: 'motion', text: 'ubah x sebesar (20)', color: '#4C97FF', type: 'MOVE_X', params: { amount: 20 }, shape: 'stack' },
+    { id: 'p_motion_3', category: 'motion', text: 'ubah y sebesar (20)', color: '#4C97FF', type: 'MOVE_Y', params: { amount: 20 }, shape: 'stack' },
+    
+    // Looks (Ungu)
+    { id: 'p_looks_1', category: 'looks', text: 'sembunyikan [Kunci Gerbang]', color: '#9966FF', type: 'DESTROY_ENTITY', params: { entityId: 'entity_key' }, shape: 'stack' },
+    { id: 'p_looks_2', category: 'looks', text: 'sembunyikan [Peti Harta Karun]', color: '#9966FF', type: 'DESTROY_ENTITY', params: { entityId: 'entity_chest' }, shape: 'stack' },
+    { id: 'p_looks_3', category: 'looks', text: 'katakan [Halo Petualang!] selama (2) detik', color: '#9966FF', type: 'SAY_MESSAGE', params: { msg: 'Halo Petualang!' }, shape: 'stack' },
+
+    // Sound (Pink)
+    { id: 'p_sound_1', category: 'sound', text: 'bunyikan suara [koin emas]', color: '#CF63CF', type: 'PLAY_SOUND', params: { sound: 'coin' }, shape: 'stack' },
+    { id: 'p_sound_2', category: 'sound', text: 'bunyikan suara [ambil kunci]', color: '#CF63CF', type: 'PLAY_SOUND', params: { sound: 'key' }, shape: 'stack' },
+
+    // Events (Kuning)
+    { id: 'p_events_1', category: 'events', text: 'ketika 🏁 bendera diklik', color: '#FFBF00', type: 'WHEN_GAME_START', params: {}, shape: 'hat' },
+    { id: 'p_events_2', category: 'events', text: 'ketika tombol [Panah / WASD] ditekan', color: '#FFBF00', type: 'WHEN_KEY_PRESSED', params: {}, shape: 'hat' },
+    { id: 'p_events_3', category: 'events', text: 'ketika menyentuh [Kunci Gerbang]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_key' }, shape: 'hat' },
+    { id: 'p_events_4', category: 'events', text: 'ketika menyentuh [Peti Harta Karun]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_chest' }, shape: 'hat' },
+    { id: 'p_events_5', category: 'events', text: 'ketika menyentuh [Pintu Gerbang]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_door' }, shape: 'hat' },
+    { id: 'p_events_6', category: 'events', text: 'ketika menyentuh [Jebakan Duri]', color: '#FFBF00', type: 'ON_COLLISION', params: { entityB: 'entity_trap' }, shape: 'hat' },
+
+    // Control (Oranye)
+    { id: 'p_ctrl_1', category: 'control', text: 'menang level! [🏆 Selamat Kamu Berhasil Kabur!]', color: '#FFAB19', type: 'WIN_GAME', params: { message: 'Selamat! Kamu memenangkan petualangan!' }, shape: 'cap' },
+    { id: 'p_ctrl_2', category: 'control', text: 'game over [💀 Kamu terkena jebakan duri!]', color: '#FFAB19', type: 'GAME_OVER', params: { message: 'Terkena jebakan!' }, shape: 'cap' },
+    { id: 'p_ctrl_3', category: 'control', text: 'ulangi selamanya', color: '#FFAB19', type: 'FOREVER', params: {}, shape: 'stack' },
+
+    // Variables (Oranye Tua)
+    { id: 'p_var_1', category: 'variables', text: 'atur [Skor] ke (0)', color: '#FF8C1A', type: 'SET_VARIABLE', params: { name: 'score', value: 0 }, shape: 'stack' },
+    { id: 'p_var_2', category: 'variables', text: 'tambah [Skor] sebesar (50)', color: '#FF8C1A', type: 'ADD_SCORE', params: { amount: 50 }, shape: 'stack' },
+    { id: 'p_var_3', category: 'variables', text: 'tambah [Skor] sebesar (100)', color: '#FF8C1A', type: 'ADD_SCORE', params: { amount: 100 }, shape: 'stack' }
+  ];
+
+  // Build GameManifest from current studio state
   const buildCurrentManifest = (): GameManifest => {
-    let entities: EntityConfig[] = [];
-    let logicBlocks: BlockNode[] = [];
+    // Maze stone walls
+    const walls: EntityConfig[] = [];
+    for (let y = 0; y < 280; y += 20) {
+      if (y !== 140) walls.push({ id: `wall_1_${y}`, name: 'Tembok', type: 'obstacle', shape: 'wall', color: '#334155', size: { width: 20, height: 20 }, initialPosition: { x: 140, y }, isSolid: true });
+    }
+    for (let y = 120; y < 400; y += 20) {
+      if (y !== 260) walls.push({ id: `wall_2_${y}`, name: 'Tembok', type: 'obstacle', shape: 'wall', color: '#334155', size: { width: 20, height: 20 }, initialPosition: { x: 260, y }, isSolid: true });
+    }
 
-    if (selectedTemplate === 'adventure') {
-      // Dungeon Adventure Walls
-      const walls: EntityConfig[] = [];
-      for (let y = 0; y < 280; y += 20) {
-        if (y !== 140) walls.push({ id: `wall_1_${y}`, name: 'Tembok', type: 'obstacle', shape: 'wall', color: '#334155', size: { width: 20, height: 20 }, initialPosition: { x: 140, y }, isSolid: true });
+    const allEntities = [...sprites, ...walls];
+
+    // Convert workspace blocks into valid GameLogicAST
+    const logicBlocks: BlockNode[] = [];
+
+    // Group blocks by hat events
+    let currentHat: BlockNode | null = null;
+    for (const b of workspaceBlocks) {
+      if (b.shape === 'hat') {
+        currentHat = {
+          type: b.type as any,
+          params: b.params,
+          children: []
+        };
+        logicBlocks.push(currentHat);
+      } else if (currentHat && currentHat.children) {
+        currentHat.children.push({
+          type: b.type as any,
+          params: b.params
+        });
       }
-      for (let y = 120; y < 400; y += 20) {
-        if (y !== 260) walls.push({ id: `wall_2_${y}`, name: 'Tembok', type: 'obstacle', shape: 'wall', color: '#334155', size: { width: 20, height: 20 }, initialPosition: { x: 260, y }, isSolid: true });
-      }
-
-      entities = [
-        { id: 'entity_hero', name: 'Hero Pahlawan', type: 'player', shape: 'square', color: heroColor, size: { width: 20, height: 20 }, initialPosition: { x: 40, y: 40 }, isSolid: false },
-        { id: 'entity_key', name: 'Kunci Gerbang', type: 'key', shape: 'diamond', color: targetColor, size: { width: 20, height: 20 }, initialPosition: { x: 340, y: 40 }, isSolid: false },
-        { id: 'entity_door', name: 'Portal Pintu Keluar', type: 'door', shape: 'door', color: doorColor, size: { width: 20, height: 20 }, initialPosition: { x: 340, y: 340 }, isSolid: false },
-        { id: 'entity_gem', name: 'Batu Permata Harta', type: 'treasure', shape: 'star', color: '#34d399', size: { width: 20, height: 20 }, initialPosition: { x: 40, y: 340 }, isSolid: false },
-        { id: 'entity_trap', name: 'Jebakan Duri', type: 'hazard', shape: 'square', color: hazardColor, size: { width: 20, height: 20 }, initialPosition: { x: 200, y: 140 }, isSolid: false },
-        ...walls
-      ];
-
-      logicBlocks = [
-        { type: 'WHEN_GAME_START', params: {}, children: [{ type: 'SET_VARIABLE', params: { name: 'score', value: 0 } }, { type: 'SET_VARIABLE', params: { name: 'hasKey', value: 0 } }] },
-        { type: 'ON_COLLISION', params: { entityA: 'entity_hero', entityB: 'entity_key' }, children: [{ type: 'ADD_SCORE', params: { amount: scoreReward } }, { type: 'DESTROY_ENTITY', params: { entityId: 'entity_key' } }, { type: 'SET_VARIABLE', params: { name: 'hasKey', value: 1 } }, { type: 'PLAY_SOUND', params: { sound: 'key' } }] },
-        { type: 'ON_COLLISION', params: { entityA: 'entity_hero', entityB: 'entity_gem' }, children: [{ type: 'ADD_SCORE', params: { amount: 100 } }, { type: 'DESTROY_ENTITY', params: { entityId: 'entity_gem' } }, { type: 'PLAY_SOUND', params: { sound: 'coin' } }] },
-        { type: 'ON_COLLISION', params: { entityA: 'entity_hero', entityB: 'entity_trap' }, children: [{ type: 'GAME_OVER', params: { message: 'Terkena jebakan duri!' } }] },
-        { type: 'ON_COLLISION', params: { entityA: 'entity_hero', entityB: 'entity_door' }, children: [{ type: 'IF_CONDITION', params: { variable: 'hasKey', operator: '==', value: 1 }, children: [{ type: 'WIN_GAME', params: { message: winMessage } }] }] }
-      ];
-    } else if (selectedTemplate === 'puzzle') {
-      // Maze Puzzle
-      entities = [
-        { id: 'entity_player', name: 'Penjelajah Teka-Teki', type: 'player', shape: 'square', color: heroColor, size: { width: 20, height: 20 }, initialPosition: { x: 40, y: 40 }, isSolid: false },
-        { id: 'entity_switch', name: 'Tombol Saklar Teka-Teki', type: 'key', shape: 'circle', color: targetColor, size: { width: 20, height: 20 }, initialPosition: { x: 200, y: 180 }, isSolid: false },
-        { id: 'entity_goal', name: 'Portal Selesai', type: 'door', shape: 'door', color: doorColor, size: { width: 20, height: 20 }, initialPosition: { x: 360, y: 360 }, isSolid: false }
-      ];
-
-      logicBlocks = [
-        { type: 'ON_COLLISION', params: { entityA: 'entity_player', entityB: 'entity_switch' }, children: [{ type: 'ADD_SCORE', params: { amount: scoreReward } }, { type: 'DESTROY_ENTITY', params: { entityId: 'entity_switch' } }, { type: 'PLAY_SOUND', params: { sound: 'key' } }] },
-        { type: 'ON_COLLISION', params: { entityA: 'entity_player', entityB: 'entity_goal' }, children: [{ type: 'WIN_GAME', params: { message: winMessage } }] }
-      ];
-    } else {
-      // Classic Snake
-      entities = [
-        { id: 'entity_snake', name: 'Ular (Player)', type: 'player', shape: 'square', color: heroColor, size: { width: 20, height: 20 }, initialPosition: { x: 100, y: 100 }, isSolid: true },
-        { id: 'entity_apple', name: 'Apel (Food)', type: 'food', shape: 'circle', color: targetColor, size: { width: 20, height: 20 }, initialPosition: { x: 240, y: 160 }, isSolid: false }
-      ];
-
-      logicBlocks = [
-        { type: 'WHEN_GAME_START', params: {}, children: [{ type: 'SET_VARIABLE', params: { name: 'score', value: 0 } }, { type: 'SET_DIRECTION', params: { entityId: 'entity_snake', direction: 'RIGHT' } }] },
-        { type: 'ON_GAME_TICK', params: { intervalMs: canvasConfig.tickRateMs }, children: [{ type: 'MOVE_ENTITY', params: { entityId: 'entity_snake', mode: 'FORWARD_DIRECTION' } }] },
-        { type: 'ON_COLLISION', params: { entityA: 'entity_snake', entityB: 'entity_apple' }, children: [{ type: 'ADD_SCORE', params: { amount: scoreReward } }, { type: 'GROW_TRAIL', params: { entityId: 'entity_snake', amount: 1 } }, { type: 'SPAWN_RANDOM', params: { entityId: 'entity_apple' } }, { type: 'PLAY_SOUND', params: { sound: 'eat' } }] }
-      ];
     }
 
     return {
-      id: `preview_${Date.now()}`,
-      title,
-      description,
+      id: `game_${Date.now()}`,
+      title: projectTitle,
+      description: projectDesc,
       authorId: user?.id || 'dev',
       authorName: user?.username || 'Developer',
       version: '1.0.0',
-      category: category as any,
-      canvas: canvasConfig,
-      entities,
+      category: 'adventure',
+      canvas: {
+        width: canvasWidth,
+        height: canvasHeight,
+        gridSize: gridSize,
+        backgroundColor: '#090d16',
+        tickRateMs: 0,
+        gameMode: 'adventure'
+      },
+      entities: allEntities,
       logic: { version: '1.0', blocks: logicBlocks },
       isPublished: true,
       createdAt: new Date().toISOString(),
@@ -184,20 +293,51 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
     };
   };
 
-  // Live Playtest runner update
-  useEffect(() => {
-    if (activeTab === 'preview' && testCanvasRef.current) {
-      if (testRunnerRef.current) testRunnerRef.current.destroy();
-      const manifest = buildCurrentManifest();
-      const runner = new GameRunner(testCanvasRef.current, manifest);
-      testRunnerRef.current = runner;
-      runner.start();
+  // Start / Play Live Stage
+  const handleStartPlay = () => {
+    if (!stageCanvasRef.current) return;
+    if (runnerRef.current) runnerRef.current.destroy();
 
-      return () => { runner.destroy(); };
+    const manifest = buildCurrentManifest();
+    const runner = new GameRunner(stageCanvasRef.current, manifest);
+    runnerRef.current = runner;
+
+    runner.onScoreChange = (newScore) => setScore(newScore);
+    runner.start();
+    setIsLiveRunning(true);
+  };
+
+  // Stop Live Stage
+  const handleStopPlay = () => {
+    if (runnerRef.current) {
+      runnerRef.current.stop();
     }
-  }, [activeTab, selectedTemplate, heroColor, targetColor, doorColor, hazardColor, canvasConfig, scoreReward, winMessage]);
+    setIsLiveRunning(false);
+  };
 
-  const handlePublishToCloud = async () => {
+  useEffect(() => {
+    handleStartPlay();
+    return () => {
+      if (runnerRef.current) runnerRef.current.destroy();
+    };
+  }, [sprites]);
+
+  // Add block from palette to workspace
+  const handleAddBlock = (block: ScratchBlockItem) => {
+    const newBlock: ScratchBlockItem = {
+      ...block,
+      id: `b_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`
+    };
+    setWorkspaceBlocks(prev => [...prev, newBlock]);
+  };
+
+  // Delete block from workspace
+  const handleDeleteBlock = (id: string) => {
+    setWorkspaceBlocks(prev => prev.filter(b => b.id !== id));
+  };
+
+  // Publish Game to Cloud Service
+  const handlePublish = async () => {
     try {
       setIsPublishing(true);
       const manifest = buildCurrentManifest();
@@ -207,8 +347,7 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
         category: manifest.category,
         canvas: manifest.canvas,
         entities: manifest.entities,
-        logic: manifest.logic,
-        blocklyXml: ''
+        logic: manifest.logic
       });
 
       setPublishSuccess(true);
@@ -223,433 +362,276 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#E9EEF2] text-slate-800 font-sans select-none overflow-hidden">
       
-      {/* Studio Header & Template Selector */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
-        <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2">
-            <Code2 className="text-indigo-400" />
-            <span>Developer Studio: Universal 2D Block Engine</span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Rancang game 2D (Adventure, Puzzle/Maze, Arcade) dengan susunan blok logika, lalu publish ke Cloud Service.
-          </p>
+      {/* 1. TOP SCRATCH TOOLBAR */}
+      <div className="h-12 bg-[#4D97FF] border-b border-[#3373CC] px-4 flex items-center justify-between text-white shrink-0 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 font-black text-lg tracking-tight bg-[#3373CC] px-2.5 py-1 rounded-lg">
+            <span>SCRATCH</span>
+            <span className="text-[10px] bg-amber-400 text-slate-900 px-1 rounded font-mono">BLOCKS</span>
+          </div>
+
+          <div className="h-6 w-px bg-blue-300/40 mx-1"></div>
+
+          {/* Project Title Input */}
+          <input
+            type="text"
+            value={projectTitle}
+            onChange={(e) => setProjectTitle(e.target.value)}
+            className="bg-[#3373CC] hover:bg-[#285EA8] focus:bg-white focus:text-slate-900 border border-transparent focus:border-white text-xs font-bold px-3 py-1.5 rounded-md transition-all outline-none w-56 sm:w-64"
+            placeholder="Judul Proyek Game"
+          />
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-3">
+        {/* Publish & Share to Cloud */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveTab('preview')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
-              activeTab === 'preview'
-                ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
-                : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <Play size={14} />
-            <span>Playtest Simulator</span>
-          </button>
-
-          <button
-            onClick={handlePublishToCloud}
+            onClick={handlePublish}
             disabled={isPublishing || publishSuccess}
-            className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 disabled:opacity-50 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-lg shadow-emerald-600/30 transition-all"
+            className="flex items-center gap-1.5 bg-[#FFAB19] hover:bg-[#E69915] active:bg-[#CC8810] text-slate-900 font-black text-xs px-3.5 py-1.5 rounded-lg shadow-sm transition-all"
           >
             {publishSuccess ? (
               <>
-                <CheckCircle2 size={16} />
+                <CheckCircle2 size={15} />
                 <span>Tersimpan di Cloud!</span>
               </>
             ) : (
               <>
-                <UploadCloud size={16} />
-                <span>{isPublishing ? 'Mengupload...' : 'Publish ke Cloud'}</span>
+                <UploadCloud size={15} />
+                <span>{isPublishing ? 'Menyimpan...' : 'Simpan ke Cloud'}</span>
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* Template Chooser Bar (Poin Revisi 2) */}
-      <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
-          <Sparkles className="text-amber-400" size={16} />
-          <span>Pilih Jenis Game yang Ingin Dibuat:</span>
-        </span>
-
-        <div className="flex flex-wrap items-center gap-2">
+      {/* 2. MAIN 3-COLUMN WORKSPACE (PERSIS SCRATCH 3.0) */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* === KOLOM 1: KATEGORI BLOK WARNA (ICON BAR) === */}
+        <div className="w-16 bg-white border-r border-slate-300 flex flex-col items-center py-2 space-y-3 shrink-0 text-[10px] font-bold text-slate-500">
           <button
-            type="button"
-            onClick={() => handleSelectTemplate('adventure')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
-              selectedTemplate === 'adventure'
-                ? 'bg-sky-600 border-sky-400 text-white shadow-md shadow-sky-600/30'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
-            }`}
+            onClick={() => setActiveCategory('motion')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeCategory === 'motion' ? 'text-[#4C97FF] scale-105' : 'hover:text-slate-800'}`}
           >
-            <Compass size={14} />
-            <span>1. 2D Dungeon Adventure</span>
+            <div className="w-6 h-6 rounded-full bg-[#4C97FF]"></div>
+            <span>Gerak</span>
           </button>
 
           <button
-            type="button"
-            onClick={() => handleSelectTemplate('puzzle')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
-              selectedTemplate === 'puzzle'
-                ? 'bg-indigo-600 border-indigo-400 text-white shadow-md shadow-indigo-600/30'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
-            }`}
+            onClick={() => setActiveCategory('looks')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeCategory === 'looks' ? 'text-[#9966FF] scale-105' : 'hover:text-slate-800'}`}
           >
-            <Puzzle size={14} />
-            <span>2. 2D Maze Puzzle</span>
+            <div className="w-6 h-6 rounded-full bg-[#9966FF]"></div>
+            <span>Tampilan</span>
           </button>
 
           <button
-            type="button"
-            onClick={() => handleSelectTemplate('snake')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
-              selectedTemplate === 'snake'
-                ? 'bg-emerald-600 border-emerald-400 text-white shadow-md shadow-emerald-600/30'
-                : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
-            }`}
+            onClick={() => setActiveCategory('sound')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeCategory === 'sound' ? 'text-[#CF63CF] scale-105' : 'hover:text-slate-800'}`}
           >
-            <Gamepad2 size={14} />
-            <span>3. Classic Arcade (Snake)</span>
+            <div className="w-6 h-6 rounded-full bg-[#CF63CF]"></div>
+            <span>Suara</span>
+          </button>
+
+          <button
+            onClick={() => setActiveCategory('events')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeCategory === 'events' ? 'text-[#FFBF00] scale-105' : 'hover:text-slate-800'}`}
+          >
+            <div className="w-6 h-6 rounded-full bg-[#FFBF00]"></div>
+            <span>Kejadian</span>
+          </button>
+
+          <button
+            onClick={() => setActiveCategory('control')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeCategory === 'control' ? 'text-[#FFAB19] scale-105' : 'hover:text-slate-800'}`}
+          >
+            <div className="w-6 h-6 rounded-full bg-[#FFAB19]"></div>
+            <span>Kontrol</span>
+          </button>
+
+          <button
+            onClick={() => setActiveCategory('variables')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeCategory === 'variables' ? 'text-[#FF8C1A] scale-105' : 'hover:text-slate-800'}`}
+          >
+            <div className="w-6 h-6 rounded-full bg-[#FF8C1A]"></div>
+            <span>Variabel</span>
           </button>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-        <button
-          onClick={() => setActiveTab('blocks')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'blocks'
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Cpu size={14} />
-          <span>1. Pemrograman Blok Logika</span>
-        </button>
+        {/* === KOLOM 2: PALET BLOK PUZZLE (DRAWER) === */}
+        <div className="w-64 bg-[#F9FAFB] border-r border-slate-300 p-3 overflow-y-auto space-y-2 shrink-0">
+          <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2 px-1">
+            Koleksi Blok ({activeCategory.toUpperCase()})
+          </div>
 
-        <button
-          onClick={() => setActiveTab('canvas')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'canvas'
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Layers size={14} />
-          <span>2. Konfigurasi Entitas & Warna</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('preview')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'preview'
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Play size={14} />
-          <span>3. Playtest & Uji Coba</span>
-        </button>
-      </div>
-
-      {/* Tab 1: Visual Block Logic Workspace */}
-      {activeTab === 'blocks' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-6">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2 text-white font-bold text-sm">
-                  <Sparkles className="text-amber-400" size={16} />
-                  <span>Susunan Blok Logika ({selectedTemplate.toUpperCase()} MODE)</span>
-                </div>
-                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded">
-                  AST Validated
-                </span>
-              </div>
-
-              {/* Dynamic Blocks based on selected template */}
-              <div className="space-y-4 font-mono text-xs">
-                
-                {/* Block 1: Game Start */}
-                <div className="bg-amber-500/10 border-2 border-amber-500/40 rounded-2xl p-4 shadow-md space-y-2">
-                  <div className="flex items-center gap-2 text-amber-300 font-bold">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                    <span>KETIKA GAME DIMULAI</span>
+          <div className="space-y-2.5">
+            {availablePaletteBlocks
+              .filter(b => b.category === activeCategory)
+              .map((block) => (
+                <div
+                  key={block.id}
+                  onClick={() => handleAddBlock(block)}
+                  style={{ backgroundColor: block.color }}
+                  className="group relative cursor-pointer px-3 py-2 rounded-xl text-white text-xs font-bold shadow-sm hover:brightness-110 active:scale-95 transition-all select-none border-t border-white/20 border-b border-black/20 flex items-center justify-between"
+                  title="Klik untuk menambahkan blok ini ke workspace"
+                >
+                  {/* Puzzle Notch Representation */}
+                  <div className="flex items-center gap-1.5">
+                    {block.shape === 'hat' && <Flag size={12} className="text-white shrink-0" />}
+                    <span>{block.text}</span>
                   </div>
-                  <div className="ml-5 pl-4 border-l-2 border-amber-500/30 space-y-2 text-slate-300">
-                    <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <span>↳ Inisialisasi Variabel Skor = 0</span>
-                      <span className="text-slate-500 text-[10px]">Init State</span>
-                    </div>
-                    {selectedTemplate === 'adventure' && (
-                      <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                        <span>↳ Inisialisasi Kunci (hasKey = 0)</span>
-                        <span className="text-slate-500 text-[10px]">Lock State</span>
-                      </div>
+                  <Plus size={14} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1" />
+                </div>
+              ))}
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 text-[10px] text-slate-400 text-center">
+            💡 <em>Klik blok di atas untuk menambahkan ke lembar kerja script</em>
+          </div>
+        </div>
+
+        {/* === KOLOM 3: SCRIPT WORKSPACE (LEMBAR KERJA SUSUNAN BLOK) === */}
+        <div className="flex-1 bg-white relative overflow-y-auto p-6 flex flex-col">
+          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+              <Code size={16} className="text-indigo-600" />
+              <span>Area Skrip Pemrograman Blok untuk: <strong className="text-indigo-600">{selectedSprite.name}</strong></span>
+            </div>
+            <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-2 py-1 rounded">
+              {workspaceBlocks.length} Blok Tersusun
+            </span>
+          </div>
+
+          {/* Canvas Workspace Blocks Stack */}
+          <div className="space-y-1 max-w-xl pb-10">
+            {workspaceBlocks.map((block, idx) => (
+              <div
+                key={block.id}
+                style={{ backgroundColor: block.color }}
+                className={`group relative text-white text-xs font-bold px-4 py-2.5 rounded-lg shadow-sm border-t border-white/25 border-b border-black/20 flex items-center justify-between transition-all ${
+                  block.shape === 'hat' 
+                    ? 'rounded-t-2xl mt-4 border-l-4 border-l-white/40' 
+                    : 'ml-3 border-l-2 border-l-white/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {block.shape === 'hat' && <Flag size={13} className="text-white" />}
+                  <span>{block.text}</span>
+                </div>
+
+                <button
+                  onClick={() => handleDeleteBlock(block.id)}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/20 rounded transition-all text-white/80 hover:text-white"
+                  title="Hapus blok ini"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* === KOLOM 4: STAGE & SPRITE MANAGER (KANAN) === */}
+        <div className="w-[420px] bg-[#F0F4F7] border-l border-slate-300 flex flex-col shrink-0">
+          
+          {/* A. STAGE HEADER: GREEN FLAG & RED STOP & SCORE */}
+          <div className="h-10 bg-white border-b border-slate-300 px-3 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              {/* Green Flag (Play) */}
+              <button
+                onClick={handleStartPlay}
+                className={`p-1.5 rounded-md hover:bg-slate-100 transition-colors ${isLiveRunning ? 'bg-emerald-50 text-emerald-600' : 'text-emerald-500'}`}
+                title="Mulai Jalankan (Green Flag)"
+              >
+                <Flag size={18} fill="currentColor" />
+              </button>
+
+              {/* Red Octagon (Stop) */}
+              <button
+                onClick={handleStopPlay}
+                className="p-1.5 rounded-md text-rose-500 hover:bg-slate-100 transition-colors"
+                title="Hentikan Game"
+              >
+                <Square size={16} fill="currentColor" />
+              </button>
+            </div>
+
+            {/* Score Variable HUD (Khas Scratch) */}
+            <div className="bg-[#FF8C1A] text-white text-[11px] font-bold px-2.5 py-0.5 rounded shadow-inner flex items-center gap-2">
+              <span>Skor:</span>
+              <span className="font-mono text-sm">{score}</span>
+            </div>
+          </div>
+
+          {/* B. STAGE CANVAS (DISPLAY SCREEN) */}
+          <div className="p-3 bg-white flex justify-center items-center border-b border-slate-300">
+            <div className="rounded-xl overflow-hidden border-2 border-slate-400 bg-slate-950 shadow-md">
+              <canvas
+                ref={stageCanvasRef}
+                className="block cursor-crosshair"
+                width={canvasWidth}
+                height={canvasHeight}
+              />
+            </div>
+          </div>
+
+          {/* C. ACTIVE SPRITE CONTROLLER & ATTRIBUTES */}
+          <div className="bg-white border-b border-slate-300 p-2.5 flex items-center justify-between text-xs text-slate-600 shrink-0 font-medium">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-800">Sprite:</span>
+              <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-indigo-600 font-bold">{selectedSprite.name}</span>
+            </div>
+
+            <div className="flex items-center gap-3 font-mono text-[11px]">
+              <span>x: <strong>{selectedSprite.initialPosition.x}</strong></span>
+              <span>y: <strong>{selectedSprite.initialPosition.y}</strong></span>
+              <span>Size: <strong>100%</strong></span>
+            </div>
+          </div>
+
+          {/* D. SPRITES LIST (SPRITE CARDS LIBRARY) */}
+          <div className="flex-1 p-3 overflow-y-auto space-y-2">
+            <div className="text-[11px] font-bold text-slate-500 mb-1 flex items-center justify-between">
+              <span>Daftar Sprites ({sprites.length})</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {sprites.map((sp) => (
+                <div
+                  key={sp.id}
+                  onClick={() => setSelectedSpriteId(sp.id)}
+                  className={`p-2 rounded-xl border flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                    selectedSpriteId === sp.id
+                      ? 'bg-blue-50 border-blue-500 shadow-sm'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {/* Sprite Thumbnail Icon */}
+                  <div className="w-10 h-10 rounded-lg bg-slate-900 flex items-center justify-center border border-slate-700">
+                    {sp.type === 'player' ? (
+                      <span className="text-base">🦸‍♂️</span>
+                    ) : sp.type === 'key' ? (
+                      <span className="text-base">🗝️</span>
+                    ) : sp.type === 'door' ? (
+                      <span className="text-base">🚪</span>
+                    ) : sp.type === 'treasure' ? (
+                      <span className="text-base">💎</span>
+                    ) : (
+                      <span className="text-base">⚠️</span>
                     )}
                   </div>
+                  <span className="text-[10px] font-bold text-slate-700 truncate w-full text-center">{sp.name}</span>
                 </div>
-
-                {/* Block 2: Key Press & Motion */}
-                <div className="bg-purple-500/10 border-2 border-purple-500/40 rounded-2xl p-4 shadow-md space-y-2">
-                  <div className="flex items-center gap-2 text-purple-300 font-bold">
-                    <span className="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
-                    <span>KETIKA TOMBOL PANAH / WASD DITEKAN</span>
-                  </div>
-                  <div className="ml-5 pl-4 border-l-2 border-purple-500/30 space-y-2 text-slate-300">
-                    <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <span>↳ Gerakkan Karakter 1 Petak Grid (Cek Tabrakan Tembok Solid)</span>
-                      <span className="text-slate-500 text-[10px]">4-Way Movement</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Block 3: Target Collision & Item Collection */}
-                <div className="bg-emerald-500/10 border-2 border-emerald-500/40 rounded-2xl p-4 shadow-md space-y-3">
-                  <div className="flex items-center justify-between text-emerald-300 font-bold">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                      <span>
-                        {selectedTemplate === 'adventure' ? 'KETIKA (Hero) MENABRAK (Kunci Emas)' :
-                         selectedTemplate === 'puzzle' ? 'KETIKA (Player) MENABRAK (Tombol Saklar)' :
-                         'KETIKA (Ular) MENABRAK (Apel)'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="ml-5 pl-4 border-l-2 border-emerald-500/30 space-y-2 text-slate-300">
-                    <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span>↳ Tambah Skor Sebesar:</span>
-                        <input
-                          type="number"
-                          value={scoreReward}
-                          onChange={(e) => setScoreReward(Number(e.target.value))}
-                          className="w-16 bg-slate-900 border border-slate-700 px-2 py-1 rounded text-emerald-400 font-bold text-center"
-                        />
-                        <span>Poin</span>
-                      </div>
-                      <span className="text-slate-500 text-[10px]">Action: Add Score</span>
-                    </div>
-
-                    <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <span>↳ Hancurkan / Ambil Item dari Kanvas</span>
-                      <span className="text-slate-500 text-[10px]">Action: Destroy Item</span>
-                    </div>
-
-                    <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <span>↳ Mainkan Suara Efek Beep (Web Audio API)</span>
-                      <span className="text-slate-500 text-[10px]">Action: Audio</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Block 4: Win Condition / Goal Door */}
-                <div className="bg-sky-500/10 border-2 border-sky-500/40 rounded-2xl p-4 shadow-md space-y-2">
-                  <div className="flex items-center gap-2 text-sky-300 font-bold">
-                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
-                    <span>KETIKA (Player) MENABRAK (Pintu Keluar / Portal)</span>
-                  </div>
-                  <div className="ml-5 pl-4 border-l-2 border-sky-500/30 space-y-2 text-slate-300">
-                    <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                      <span>↳ Jika [hasKey == 1] &rarr; Picu Layar KAMU MENANG!</span>
-                      <span className="text-slate-500 text-[10px]">Win Condition</span>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* Sidebar Meta */}
-          <div className="space-y-6">
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-4">
-              <h3 className="text-sm font-bold text-white">Informasi Permainan</h3>
-              
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="text-slate-400 block mb-1">Judul Game:</label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Deskripsi:</label>
-                  <textarea
-                    rows={3}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">Pesan Saat Menang:</label>
-                  <input
-                    type="text"
-                    value={winMessage}
-                    onChange={(e) => setWinMessage(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-emerald-400 font-semibold focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-3xl p-5 text-xs text-slate-300 space-y-2">
-              <div className="font-bold text-indigo-300 flex items-center gap-1.5">
-                <Sparkles size={14} /> Fleksibilitas Engine 2D:
-              </div>
-              <p className="leading-relaxed">
-                Anda bisa merakit game <strong>Adventure</strong> (dengan kunci dan pintu keluar), game <strong>Puzzle</strong> (dengan saklar target), maupun game <strong>Arcade</strong> seperti Snake. Semuanya otomatis dikompilasi menjadi GameManifest JSON yang seragam.
-              </p>
-            </div>
-          </div>
         </div>
-      )}
 
-      {/* Tab 2: Canvas & Entities */}
-      {activeTab === 'canvas' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-4">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Layers size={18} className="text-sky-400" />
-              <span>Dimensi Kanvas & Pengaturan Grid</span>
-            </h3>
+      </div>
 
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="text-slate-400 block mb-1">Ukuran Kanvas (Lebar x Tinggi):</label>
-                <div className="grid grid-cols-2 gap-2 font-mono">
-                  <input
-                    type="number"
-                    value={canvasConfig.width}
-                    onChange={(e) => setCanvasConfig({ ...canvasConfig, width: Number(e.target.value) })}
-                    className="bg-slate-950 border border-slate-700 px-3 py-2 rounded-xl text-slate-200"
-                  />
-                  <input
-                    type="number"
-                    value={canvasConfig.height}
-                    onChange={(e) => setCanvasConfig({ ...canvasConfig, height: Number(e.target.value) })}
-                    className="bg-slate-950 border border-slate-700 px-3 py-2 rounded-xl text-slate-200"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1">Warna Background Kanvas:</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={canvasConfig.backgroundColor}
-                    onChange={(e) => setCanvasConfig({ ...canvasConfig, backgroundColor: e.target.value })}
-                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0"
-                  />
-                  <span className="font-mono text-slate-300 font-bold">{canvasConfig.backgroundColor}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-4">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Sparkles size={18} className="text-emerald-400" />
-              <span>Warna Objek & Entitas Game</span>
-            </h3>
-
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="text-slate-400 block mb-1">Warna Karakter Utama (Hero / Player):</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={heroColor}
-                    onChange={(e) => setHeroColor(e.target.value)}
-                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0"
-                  />
-                  <span className="font-mono text-slate-300 font-bold">{heroColor}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1">Warna Item Kunci / Saklar / Target:</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={targetColor}
-                    onChange={(e) => setTargetColor(e.target.value)}
-                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0"
-                  />
-                  <span className="font-mono text-slate-300 font-bold">{targetColor}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1">Warna Pintu Keluar / Portal Menang:</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={doorColor}
-                    onChange={(e) => setDoorColor(e.target.value)}
-                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0"
-                  />
-                  <span className="font-mono text-slate-300 font-bold">{doorColor}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: Playtest */}
-      {activeTab === 'preview' && (
-        <div className="flex flex-col items-center bg-slate-900/60 border border-slate-800 rounded-3xl p-8 space-y-6">
-          <div className="text-center space-y-1">
-            <h3 className="text-lg font-bold text-white flex items-center justify-center gap-2">
-              <Play size={18} className="text-emerald-400" />
-              <span>Simulator Playtest Lokal ({selectedTemplate.toUpperCase()})</span>
-            </h3>
-            <p className="text-xs text-slate-400">
-              Gunakan tombol panah keyboard atau WASD untuk mencoba menggerakkan karakter pahlawan di kanvas.
-            </p>
-          </div>
-
-          <div className="rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-700 bg-slate-950">
-            <canvas ref={testCanvasRef} className="block" />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                if (testRunnerRef.current) testRunnerRef.current.start();
-              }}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-4 py-2 rounded-xl font-semibold transition-colors"
-            >
-              <RefreshCw size={14} />
-              <span>Restart Simulasi</span>
-            </button>
-
-            <button
-              onClick={handlePublishToCloud}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-2 rounded-xl shadow-lg shadow-emerald-600/30 transition-all"
-            >
-              <UploadCloud size={16} />
-              <span>Sudah Pas? Publish ke Cloud Sekarang!</span>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
