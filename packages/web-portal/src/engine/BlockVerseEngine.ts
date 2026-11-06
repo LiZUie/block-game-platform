@@ -21,7 +21,8 @@ export interface SpriteTarget {
   visible: boolean;
   rotationStyle: 'all-around' | 'left-right' | 'dont-rotate';
   costumeEmoji: string;
-  color: string;
+  costumeImageUrl?: string; // Mendukung upload gambar/URL sprite bebas
+  sayText?: string;         // Balon percakapan (blok "say")
   workspaceJson?: Record<string, any>;
   scripts: CompiledScript[];
 }
@@ -30,15 +31,17 @@ export interface BlockVerseProject {
   id?: string;
   title: string;
   stageBackdrop: string;
+  stagePattern?: 'none' | 'stars' | 'grid' | 'sky' | 'dungeon';
   variables: Record<string, number | string | boolean>;
+  broadcasts: string[];
   sprites: SpriteTarget[];
 }
 
-// Runtime Instance (Mencakup Sprite Asli maupun Clone)
 export interface RuntimeEntity extends SpriteTarget {
   isClone: boolean;
   parentId: string;
   localVars: Record<string, any>;
+  sayExpireTime?: number;
 }
 
 interface ThreadProcess {
@@ -47,7 +50,7 @@ interface ThreadProcess {
   ops: CompiledOp[];
   pc: number;
   waitUntilTime: number;
-  loopStack: { pcStart: number; remaining?: number; condition?: CompiledOp }[];
+  loopStack: { pcStart: number; remaining?: number }[];
 }
 
 export class BlockVerseRuntime {
@@ -58,16 +61,18 @@ export class BlockVerseRuntime {
   private variables: Record<string, any> = {};
   private threads: ThreadProcess[] = [];
   private pressedKeys: Set<string> = new Set();
+  private imageCache: Map<string, HTMLImageElement> = new Map();
+  private mousePos: { x: number; y: number } = { x: 0, y: 0 };
   private isRunning: boolean = false;
   private rafId: number | null = null;
   private onScoreSubmit?: (score: number) => void;
-  private onStateUpdate?: (vars: Record<string, any>, activeSprite?: RuntimeEntity) => void;
+  private onStateUpdate?: (vars: Record<string, any>) => void;
 
   constructor(
     canvas: HTMLCanvasElement,
     project: BlockVerseProject,
     onScoreSubmit?: (score: number) => void,
-    onStateUpdate?: (vars: Record<string, any>, activeSprite?: RuntimeEntity) => void
+    onStateUpdate?: (vars: Record<string, any>) => void
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
@@ -81,15 +86,29 @@ export class BlockVerseRuntime {
   private bindInputEvents() {
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
+    this.canvas.addEventListener('mousemove', this.handleMouseMove);
   }
 
   public destroy() {
     this.stop();
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
+    this.canvas.removeEventListener('mousemove', this.handleMouseMove);
   }
 
+  private handleMouseMove = (e: MouseEvent) => {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = 480 / rect.width;
+    const scaleY = 360 / rect.height;
+    this.mousePos.x = Math.round((e.clientX - rect.left) * scaleX - 240);
+    this.mousePos.y = Math.round(180 - (e.clientY - rect.top) * scaleY);
+  };
+
   private handleKeyDown = (e: KeyboardEvent) => {
+    // Jangan bajak input ketika user sedang mengetik di form input/textarea
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
     const key = e.key === ' ' ? 'space' : e.key.toLowerCase();
     const wasPressed = this.pressedKeys.has(key);
     this.pressedKeys.add(key);
@@ -97,8 +116,8 @@ export class BlockVerseRuntime {
     if (this.isRunning && !wasPressed) {
       this.entities.forEach((entity) => {
         entity.scripts
-          .filter((s) => s.trigger === 'WHEN_KEY_PRESSED' && s.param === key)
-          .forEach((s) => this.spawnThread(entity, s.ops));
+          .filter((s) => s.trigger === 'WHEN_KEY_PRESSED' && (s.param === key || s.param === 'any'))
+          .forEach((s) => this.spawnThread(entity, JSON.parse(JSON.stringify(s.ops))));
       });
     }
   };
@@ -133,11 +152,10 @@ export class BlockVerseRuntime {
     this.resetState();
     this.isRunning = true;
 
-    // Trigger semua blok WHEN_FLAG_CLICKED
     this.entities.forEach((entity) => {
       entity.scripts
         .filter((s) => s.trigger === 'WHEN_FLAG_CLICKED')
-        .forEach((s) => this.spawnThread(entity, s.ops));
+        .forEach((s) => this.spawnThread(entity, JSON.parse(JSON.stringify(s.ops))));
     });
 
     this.loop();
@@ -177,6 +195,12 @@ export class BlockVerseRuntime {
         return Math.round(entity.x);
       case 'Y_POS':
         return Math.round(entity.y);
+      case 'DIRECTION':
+        return Math.round(entity.direction);
+      case 'MOUSE_X':
+        return this.mousePos.x;
+      case 'MOUSE_Y':
+        return this.mousePos.y;
       case 'RANDOM': {
         const min = Number(this.evaluateValue(val.min, entity));
         const max = Number(this.evaluateValue(val.max, entity));
@@ -188,15 +212,23 @@ export class BlockVerseRuntime {
         if (val.op === 'ADD') return a + b;
         if (val.op === 'SUB') return a - b;
         if (val.op === 'MUL') return a * b;
-        if (val.op === 'DIV') return b !== 0 ? a / b : 0;
+        if (val.op === 'DIV') return b !== 0 ? +(a / b).toFixed(2) : 0;
         return 0;
+      }
+      case 'LOGIC': {
+        const a = Boolean(this.evaluateValue(val.a, entity));
+        const b = Boolean(this.evaluateValue(val.b, entity));
+        if (val.op === 'AND') return a && b;
+        if (val.op === 'OR') return a || b;
+        if (val.op === 'NOT') return !a;
+        return false;
       }
       case 'COMPARE': {
         const a = this.evaluateValue(val.a, entity);
         const b = this.evaluateValue(val.b, entity);
         const numA = Number(a);
         const numB = Number(b);
-        const isNumeric = !isNaN(numA) && !isNaN(numB);
+        const isNumeric = !isNaN(numA) && !isNaN(numB) && a !== '' && b !== '';
         if (val.op === 'LT') return isNumeric ? numA < numB : String(a) < String(b);
         if (val.op === 'GT') return isNumeric ? numA > numB : String(a) > String(b);
         if (val.op === 'EQ') return String(a) === String(b);
@@ -205,13 +237,19 @@ export class BlockVerseRuntime {
       case 'TOUCHING': {
         if (!entity.visible) return false;
         const targetName = val.target;
+        if (targetName === '_edge_') {
+          return Math.abs(entity.x) >= 225 || Math.abs(entity.y) >= 165;
+        }
+        if (targetName === '_mouse_') {
+          const r = (entity.size / 100) * 20;
+          return Math.hypot(entity.x - this.mousePos.x, entity.y - this.mousePos.y) < r;
+        }
         const r1 = (entity.size / 100) * 18;
         return this.entities.some((other) => {
           if (other === entity || !other.visible) return false;
           if (other.name !== targetName && other.parentId !== targetName) return false;
           const r2 = (other.size / 100) * 18;
-          const dist = Math.hypot(entity.x - other.x, entity.y - other.y);
-          return dist < r1 + r2;
+          return Math.hypot(entity.x - other.x, entity.y - other.y) < r1 + r2;
         });
       }
       case 'KEY_PRESSED':
@@ -226,7 +264,6 @@ export class BlockVerseRuntime {
     const activeThreads: ThreadProcess[] = [];
 
     for (const thread of this.threads) {
-      // Hentikan thread jika entitas clone sudah dihapus
       if (!this.entities.includes(thread.entity)) continue;
 
       if (now < thread.waitUntilTime) {
@@ -243,18 +280,7 @@ export class BlockVerseRuntime {
         if (thread.pc >= thread.ops.length) {
           if (thread.loopStack.length > 0) {
             const topLoop = thread.loopStack[thread.loopStack.length - 1];
-            if (topLoop.condition) {
-              const condMet = Boolean(this.evaluateValue(topLoop.condition, thread.entity));
-              if (!condMet) {
-                thread.pc = topLoop.pcStart;
-                yielded = true;
-                break;
-              } else {
-                thread.loopStack.pop();
-                continue;
-              }
-            } else if (topLoop.remaining === undefined) {
-              // Forever loop
+            if (topLoop.remaining === undefined) {
               thread.pc = topLoop.pcStart;
               yielded = true;
               break;
@@ -291,10 +317,17 @@ export class BlockVerseRuntime {
           case 'TURN_LEFT':
             thread.entity.direction = (thread.entity.direction - Number(this.evaluateValue(op.degrees, thread.entity))) % 360;
             break;
+          case 'POINT_DIRECTION':
+            thread.entity.direction = Number(this.evaluateValue(op.direction, thread.entity)) % 360;
+            break;
           case 'GOTO_XY':
             thread.entity.x = Number(this.evaluateValue(op.x, thread.entity));
             thread.entity.y = Number(this.evaluateValue(op.y, thread.entity));
             this.clampPosition(thread.entity);
+            break;
+          case 'GOTO_RANDOM':
+            thread.entity.x = Math.floor(Math.random() * 440) - 220;
+            thread.entity.y = Math.floor(Math.random() * 320) - 160;
             break;
           case 'CHANGE_X':
             thread.entity.x += Number(this.evaluateValue(op.dx, thread.entity));
@@ -322,8 +355,24 @@ export class BlockVerseRuntime {
               this.clampPosition(thread.entity);
             }
             break;
+          case 'SAY': {
+            const text = String(this.evaluateValue(op.text, thread.entity));
+            const secs = Number(this.evaluateValue(op.seconds, thread.entity));
+            thread.entity.sayText = text;
+            if (secs > 0) {
+              thread.entity.sayExpireTime = now + secs * 1000;
+              thread.waitUntilTime = now + secs * 1000;
+              yielded = true;
+            } else {
+              thread.entity.sayExpireTime = undefined;
+            }
+            break;
+          }
           case 'SET_SIZE':
             thread.entity.size = Math.max(10, Math.min(300, Number(this.evaluateValue(op.size, thread.entity))));
+            break;
+          case 'CHANGE_SIZE':
+            thread.entity.size = Math.max(10, Math.min(300, thread.entity.size + Number(this.evaluateValue(op.delta, thread.entity))));
             break;
           case 'SHOW':
             thread.entity.visible = true;
@@ -354,17 +403,17 @@ export class BlockVerseRuntime {
           case 'REPEAT': {
             const count = Math.floor(Number(this.evaluateValue(op.times, thread.entity)));
             if (count > 0 && op.substack?.length > 0) {
-              const inlineEnd = thread.pc + op.substack.length;
-              thread.ops.splice(thread.pc, 0, ...op.substack);
+              const subCopy = JSON.parse(JSON.stringify(op.substack));
+              thread.ops.splice(thread.pc, 0, ...subCopy);
               thread.loopStack.push({ pcStart: thread.pc, remaining: count });
-              // Hindari mutasi berulang dengan mengganti op menjadi penanda
               op.op = 'NOOP_LOOP_HEADER';
             }
             break;
           }
           case 'FOREVER': {
             if (op.substack?.length > 0) {
-              thread.ops.splice(thread.pc, 0, ...op.substack);
+              const subCopy = JSON.parse(JSON.stringify(op.substack));
+              thread.ops.splice(thread.pc, 0, ...subCopy);
               thread.loopStack.push({ pcStart: thread.pc });
               op.op = 'NOOP_LOOP_HEADER';
             }
@@ -374,6 +423,8 @@ export class BlockVerseRuntime {
             const cond = Boolean(this.evaluateValue(op.condition, thread.entity));
             if (cond && op.substack?.length > 0) {
               this.spawnThread(thread.entity, JSON.parse(JSON.stringify(op.substack)));
+            } else if (!cond && op.elseSubstack?.length > 0) {
+              this.spawnThread(thread.entity, JSON.parse(JSON.stringify(op.elseSubstack)));
             }
             break;
           }
@@ -413,6 +464,9 @@ export class BlockVerseRuntime {
             });
             break;
           }
+          case 'STOP_ALL':
+            this.stop();
+            return;
           case 'SUBMIT_SCORE': {
             const finalScore = Number(this.evaluateValue(op.score, thread.entity));
             if (this.onScoreSubmit) this.onScoreSubmit(finalScore);
@@ -441,21 +495,45 @@ export class BlockVerseRuntime {
 
   public renderFrame() {
     const { ctx, canvas } = this;
+    const now = performance.now();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Background Stage (480x360)
-    ctx.fillStyle = this.project.stageBackdrop || '#090d16';
+    // 1. Gambar Latar Belakang Sesuai Pilihan Developer
+    ctx.fillStyle = this.project.stageBackdrop || '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Efek Starfield (seperti Space Invaders di gambar)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-    for (let i = 0; i < 38; i++) {
-      const sx = ((i * 97) % 460) + 10;
-      const sy = ((i * 53) % 340) + 10;
-      ctx.fillRect(sx, sy, i % 3 === 0 ? 2 : 1.5, i % 3 === 0 ? 2 : 1.5);
+    const pattern = this.project.stagePattern || 'grid';
+    if (pattern === 'stars') {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      for (let i = 0; i < 38; i++) {
+        ctx.fillRect(((i * 97) % 460) + 10, ((i * 53) % 340) + 10, 2, 2);
+      }
+    } else if (pattern === 'grid') {
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= 480; x += 30) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 360);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= 360; y += 30) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(480, y);
+        ctx.stroke();
+      }
+    } else if (pattern === 'sky') {
+      const grad = ctx.createLinearGradient(0, 0, 0, 360);
+      grad.addColorStop(0, '#38bdf8');
+      grad.addColorStop(0.75, '#bae6fd');
+      grad.addColorStop(0.75, '#4ade80');
+      grad.addColorStop(1, '#16a34a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 480, 360);
     }
 
-    // 2. Render Semua Sprite & Clone (Konversi Koordinat Scratch (0,0) di tengah -> Canvas)
+    // 2. Render Semua Sprite (Emoji atau Custom Image Upload)
     for (const entity of this.entities) {
       if (!entity.visible) continue;
 
@@ -468,50 +546,76 @@ export class BlockVerseRuntime {
 
       if (entity.rotationStyle === 'all-around') {
         ctx.rotate(((entity.direction - 90) * Math.PI) / 180);
-      } else if (entity.rotationStyle === 'left-right' && entity.direction < 0) {
+      } else if (entity.rotationStyle === 'left-right' && (entity.direction < 0 || entity.direction > 180)) {
         ctx.scale(-1, 1);
       }
 
       ctx.scale(scale, scale);
 
-      // Gambar Sprite (mendukung bentuk retro Space Invaders atau Emoji)
-      if (entity.name === 'Player Ship') {
-        ctx.fillStyle = '#facc15';
-        ctx.fillRect(-20, 0, 40, 12);
-        ctx.fillRect(-6, -10, 12, 10);
-      } else if (entity.name === 'laser' || entity.name === 'Alien Laser') {
-        ctx.fillStyle = entity.name === 'laser' ? '#38bdf8' : '#f87171';
-        ctx.fillRect(-2, -10, 4, 20);
+      if (entity.costumeImageUrl) {
+        let img = this.imageCache.get(entity.costumeImageUrl);
+        if (!img) {
+          img = new Image();
+          img.src = entity.costumeImageUrl;
+          this.imageCache.set(entity.costumeImageUrl, img);
+        }
+        if (img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, -24, -24, 48, 48);
+        }
       } else {
-        ctx.font = '32px sans-serif';
+        ctx.font = '36px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(entity.costumeEmoji || '👾', 0, 0);
+        ctx.fillText(entity.costumeEmoji || '🐱', 0, 0);
       }
 
       ctx.restore();
+
+      // Balon Percakapan (Blok "say")
+      if (entity.sayText && (!entity.sayExpireTime || now < entity.sayExpireTime)) {
+        ctx.font = 'bold 12px sans-serif';
+        const textWidth = Math.max(40, ctx.measureText(entity.sayText).width + 16);
+        const bx = Math.min(470 - textWidth, Math.max(10, screenX + 15));
+        const by = Math.max(10, screenY - 45);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, textWidth, 26, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#1e293b';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(entity.sayText, bx + textWidth / 2, by + 13);
+      }
     }
 
-    // 3. Render Badge Variabel Global di Atas Stage (Persis badge oranye di gambar Scratch)
+    // 3. Render Badge Variabel di Stage
     const varKeys = Object.keys(this.variables);
     varKeys.forEach((key, idx) => {
       const val = this.variables[key];
-      const badgeX = 215 + idx * 95;
-      const badgeY = 10;
+      const badgeX = 10;
+      const badgeY = 10 + idx * 30;
+      const label = `${key}: ${val}`;
+
+      ctx.font = 'bold 12px sans-serif';
+      const boxW = Math.max(70, ctx.measureText(label).width + 20);
 
       ctx.fillStyle = '#ff8c1a';
       ctx.beginPath();
-      ctx.roundRect(badgeX, badgeY, 54, 24, 6);
+      ctx.roundRect(badgeX, badgeY, boxW, 24, 6);
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'center';
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(val), badgeX + 27, badgeY + 12);
+      ctx.fillText(label, badgeX + 10, badgeY + 12);
     });
   }
 
@@ -520,23 +624,129 @@ export class BlockVerseRuntime {
     this.stepThreads();
     this.renderFrame();
     if (this.onStateUpdate) {
-      this.onStateUpdate(this.variables, this.entities[0]);
+      this.onStateUpdate(this.variables);
     }
     this.rafId = requestAnimationFrame(this.loop);
   };
 }
 
 // ============================================================================
-// PRESET DEFAULT: SPACE INVADERS (Persis dengan Screenshot Referensi Kamu)
+// KOLEKSI PROJECT TEMPLATES (Blank Project, Platformer/Collector, Space Invaders)
 // ============================================================================
+export const BLANK_STARTER_PROJECT: BlockVerseProject = {
+  title: 'My Awesome Game',
+  stageBackdrop: '#ffffff',
+  stagePattern: 'grid',
+  variables: {
+    score: 0,
+  },
+  broadcasts: ['message1', 'game over', 'win'],
+  sprites: [
+    {
+      id: 'sprite_hero',
+      name: 'Hero',
+      x: 0,
+      y: 0,
+      size: 100,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'all-around',
+      costumeEmoji: '🐱',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'GOTO_XY', x: 0, y: 0 },
+            { op: 'SAY', text: 'Hello BlockVerse!', seconds: 2 },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+export const COIN_HUNTER_PRESET: BlockVerseProject = {
+  title: 'Coin Hunter Adventure',
+  stageBackdrop: '#e0f2fe',
+  stagePattern: 'sky',
+  variables: {
+    score: 0,
+  },
+  broadcasts: ['got_coin', 'game over'],
+  sprites: [
+    {
+      id: 'sprite_knight',
+      name: 'Knight',
+      x: -120,
+      y: -90,
+      size: 100,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'left-right',
+      costumeEmoji: '🧙♂️',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'GOTO_XY', x: -120, y: -90 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 6 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -6 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowup' }, substack: [{ op: 'CHANGE_Y', dy: 6 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowdown' }, substack: [{ op: 'CHANGE_Y', dy: -6 }] },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'sprite_coin',
+      name: 'Coin',
+      x: 80,
+      y: 0,
+      size: 90,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🪙',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            {
+              op: 'FOREVER',
+              substack: [
+                {
+                  op: 'IF',
+                  condition: { type: 'TOUCHING', target: 'Knight' },
+                  substack: [
+                    { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
+                    { op: 'GOTO_RANDOM' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 export const SPACE_INVADERS_PRESET: BlockVerseProject = {
   title: 'Space Invaders',
   stageBackdrop: '#05070d',
+  stagePattern: 'stars',
   variables: {
     score: 0,
     'alien-count': 0,
     'march-steps': 5,
   },
+  broadcasts: ['alien_hit', 'march', 'game over'],
   sprites: [
     {
       id: 'sprite_player',
@@ -548,7 +758,6 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
       visible: true,
       rotationStyle: 'left-right',
       costumeEmoji: '🛸',
-      color: '#facc15',
       scripts: [
         {
           trigger: 'WHEN_FLAG_CLICKED',
@@ -558,16 +767,8 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
             {
               op: 'FOREVER',
               substack: [
-                {
-                  op: 'IF',
-                  condition: { type: 'KEY_PRESSED', key: 'arrowleft' },
-                  substack: [{ op: 'CHANGE_X', dx: -7 }],
-                },
-                {
-                  op: 'IF',
-                  condition: { type: 'KEY_PRESSED', key: 'arrowright' },
-                  substack: [{ op: 'CHANGE_X', dx: 7 }],
-                },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -7 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 7 }] },
               ],
             },
           ],
@@ -589,12 +790,8 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
       visible: false,
       rotationStyle: 'dont-rotate',
       costumeEmoji: '⚡',
-      color: '#38bdf8',
       scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [{ op: 'HIDE' }],
-        },
+        { trigger: 'WHEN_FLAG_CLICKED', ops: [{ op: 'HIDE' }] },
         {
           trigger: 'WHEN_CLONE_START',
           ops: [
@@ -609,7 +806,6 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
                   condition: { type: 'TOUCHING', target: 'alien' },
                   substack: [
                     { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
-                    { op: 'BROADCAST', message: 'alien_hit' },
                     { op: 'DELETE_CLONE' },
                   ],
                 },
@@ -624,29 +820,24 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
       id: 'sprite_alien',
       name: 'alien',
       x: -150,
-      y: 20,
-      size: 60,
+      y: 120,
+      size: 80,
       direction: 90,
       visible: true,
       rotationStyle: 'left-right',
       costumeEmoji: '👾',
-      color: '#60a5fa',
       scripts: [
         {
           trigger: 'WHEN_FLAG_CLICKED',
           ops: [
-            { op: 'SET_SIZE', size: 60 },
-            { op: 'GOTO_XY', x: -150, y: 130 },
+            { op: 'GOTO_XY', x: -150, y: 120 },
             { op: 'SHOW' },
-            { op: 'SET_VAR', varName: 'alien-count', value: 0 },
-            { op: 'SET_VAR', varName: 'march-steps', value: 6 },
             {
               op: 'REPEAT',
               times: 6,
               substack: [
                 { op: 'CREATE_CLONE', target: 'alien' },
                 { op: 'CHANGE_X', dx: 50 },
-                { op: 'CHANGE_VAR', varName: 'alien-count', delta: 1 },
               ],
             },
             { op: 'HIDE' },
@@ -659,63 +850,11 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
             {
               op: 'FOREVER',
               substack: [
-                { op: 'MOVE_STEPS', steps: { type: 'VAR', name: 'march-steps' } },
+                { op: 'MOVE_STEPS', steps: 4 },
                 { op: 'IF_ON_EDGE_BOUNCE' },
-                {
-                  op: 'IF',
-                  condition: { type: 'TOUCHING', target: 'laser' },
-                  substack: [
-                    { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
-                    { op: 'DELETE_CLONE' },
-                  ],
-                },
               ],
             },
           ],
-        },
-      ],
-    },
-    {
-      id: 'sprite_gameover',
-      name: 'Game Over',
-      x: 0,
-      y: 0,
-      size: 100,
-      direction: 90,
-      visible: false,
-      rotationStyle: 'dont-rotate',
-      costumeEmoji: '💀',
-      color: '#f43f5e',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [{ op: 'HIDE' }],
-        },
-        {
-          trigger: 'WHEN_RECEIVE',
-          param: 'game over',
-          ops: [
-            { op: 'SHOW' },
-            { op: 'SUBMIT_SCORE', score: { type: 'VAR', name: 'score' } },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'sprite_alien_laser',
-      name: 'Alien Laser',
-      x: 0,
-      y: 90,
-      size: 70,
-      direction: 90,
-      visible: false,
-      rotationStyle: 'dont-rotate',
-      costumeEmoji: '🔥',
-      color: '#fb923c',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [{ op: 'HIDE' }],
         },
       ],
     },

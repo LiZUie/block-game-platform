@@ -13,14 +13,18 @@ import {
   Code2,
   Palette,
   Volume2,
-  Maximize2,
   StickyNote,
   X,
   CheckCircle2,
+  FolderOpen,
+  Upload,
+  PlusCircle,
 } from 'lucide-react';
 import {
+  BLANK_STARTER_PROJECT,
   BlockVerseProject,
   BlockVerseRuntime,
+  COIN_HUNTER_PRESET,
   SPACE_INVADERS_PRESET,
   SpriteTarget,
 } from '../engine/BlockVerseEngine';
@@ -28,6 +32,7 @@ import {
   CATEGORY_BLOCKS,
   compileWorkspaceToScripts,
   registerScratchBlocks,
+  updateStudioDynamicContext,
 } from '../engine/ScratchBlocksSetup';
 
 interface StickyComment {
@@ -47,39 +52,49 @@ const CATEGORIES = [
   { id: 'Variables', label: 'Variables', color: '#FF8C1A' },
 ];
 
+const SPRITE_GALLERY_EMOJIS = [
+  '🐱', '🧙♂️', '🥷', '🦸♂️', '🤖', '👾', '🛸', '🚀',
+  '🐉', '🦖', '👻', '🧟', '🪙', '💎', '⚡', '🔥',
+  '💣', '🗡️', '🛡️', '🏎️', '⚽', '🏀', '🍎', '🏆',
+];
+
 export interface DeveloperStudioProps {
   onBack?: () => void;
   onGamePublished?: (gameId: string) => void;
 }
 
 export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGamePublished }) => {
-  const [project, setProject] = useState<BlockVerseProject>(SPACE_INVADERS_PRESET);
-  const [selectedSpriteId, setSelectedSpriteId] = useState<string>('sprite_alien');
+  // Default dimulai dari Blank Starter Project (Bukan terkunci di Alien)
+  const [project, setProject] = useState<BlockVerseProject>(BLANK_STARTER_PROJECT);
+  const [selectedSpriteId, setSelectedSpriteId] = useState<string>(
+    BLANK_STARTER_PROJECT.sprites[0].id
+  );
   const [activeCategory, setActiveCategory] = useState<string>('Motion');
   const [activeTab, setActiveTab] = useState<'code' | 'costumes' | 'sounds'>('code');
   const [saveStatus, setSaveStatus] = useState<string>('');
-  const [comments, setComments] = useState<StickyComment[]>([
-    {
-      id: 'note_1',
-      text: 'Create laser at random times. The start_laser_x and start_laser_y are used to have the laser clone start at the correct sprite.',
-      x: 420,
-      y: 36,
-    },
-    {
-      id: 'note_2',
-      text: 'Local Variable for each clone specifying if it is a clone. Only the clones should show and march.',
-      x: 430,
-      y: 440,
-    },
-  ]);
+  const [comments, setComments] = useState<StickyComment[]>([]);
 
   const blocklyDivRef = useRef<HTMLDivElement | null>(null);
   const workspaceRef = useRef<Blockly.WorkspaceSvg | null>(null);
   const stageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<BlockVerseRuntime | null>(null);
+  const selectedSpriteIdRef = useRef<string>(selectedSpriteId);
+
+  useEffect(() => {
+    selectedSpriteIdRef.current = selectedSpriteId;
+  }, [selectedSpriteId]);
 
   const activeSprite =
     project.sprites.find((s) => s.id === selectedSpriteId) || project.sprites[0];
+
+  // Sinkronkan nama Sprite, Variabel, dan Broadcast ke Dropdown Blockly secara dinamis
+  useEffect(() => {
+    updateStudioDynamicContext({
+      spriteNames: project.sprites.map((s) => s.name),
+      variableNames: Object.keys(project.variables),
+      broadcastMessages: project.broadcasts || ['message1', 'game over'],
+    });
+  }, [project]);
 
   // 1. Inisialisasi Blockly (Renderer Zelos = Scratch 3.0)
   useEffect(() => {
@@ -95,7 +110,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
       zoom: {
         controls: true,
         wheel: true,
-        startScale: 0.78,
+        startScale: 0.8,
         maxScale: 1.5,
         minScale: 0.4,
         scaleSpeed: 1.1,
@@ -111,22 +126,20 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
 
     workspaceRef.current = workspace;
 
-    // Muat contoh blok visual awal jika belum ada state Blockly
-    seedDefaultVisualBlocks(workspace);
-
     const onWorkspaceChange = (e: Blockly.Events.Abstract) => {
-      if (e.isUiEvent) return;
-      const jsonState = Blockly.serialization.workspaces.save(workspace);
-      const compiled = compileWorkspaceToScripts(workspace);
+      if (e.isUiEvent || !workspaceRef.current) return;
+      const currentId = selectedSpriteIdRef.current;
+      const jsonState = Blockly.serialization.workspaces.save(workspaceRef.current);
+      const compiled = compileWorkspaceToScripts(workspaceRef.current);
 
       setProject((prev) => ({
         ...prev,
         sprites: prev.sprites.map((sp) =>
-          sp.id === selectedSpriteId
+          sp.id === currentId
             ? {
                 ...sp,
                 workspaceJson: jsonState,
-                scripts: compiled.length > 0 ? compiled : sp.scripts,
+                scripts: compiled,
               }
             : sp
         ),
@@ -149,18 +162,16 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     });
   }, [activeCategory]);
 
-  // 3. Simpan/Muat State Workspace saat Pindah Kartu Sprite
+  // 3. Muat Workspace Spesifik Milik Sprite yang Dipilih (Tanpa Mereset ke Alien)
   useEffect(() => {
     if (!workspaceRef.current || !activeSprite) return;
     Blockly.Events.disable();
     workspaceRef.current.clear();
-    if (activeSprite.workspaceJson) {
+    if (activeSprite.workspaceJson && Object.keys(activeSprite.workspaceJson).length > 0) {
       Blockly.serialization.workspaces.load(
         activeSprite.workspaceJson,
         workspaceRef.current
       );
-    } else {
-      seedDefaultVisualBlocks(workspaceRef.current);
     }
     Blockly.Events.enable();
   }, [selectedSpriteId]);
@@ -177,12 +188,26 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     };
   }, []);
 
-  // Sinkronkan perubahan project ke Runtime
   useEffect(() => {
     if (runtimeRef.current) {
       runtimeRef.current.loadProject(project);
     }
   }, [project]);
+
+  const handleSelectTemplate = (templateKey: string) => {
+    let chosen: BlockVerseProject = BLANK_STARTER_PROJECT;
+    if (templateKey === 'coin') chosen = COIN_HUNTER_PRESET;
+    if (templateKey === 'space') chosen = SPACE_INVADERS_PRESET;
+
+    const cloned = JSON.parse(JSON.stringify(chosen)) as BlockVerseProject;
+    if (workspaceRef.current) {
+      Blockly.Events.disable();
+      workspaceRef.current.clear();
+      Blockly.Events.enable();
+    }
+    setProject(cloned);
+    setSelectedSpriteId(cloned.sprites[0].id);
+  };
 
   const updateActiveSpriteProp = (key: keyof SpriteTarget, value: any) => {
     setProject((prev) => ({
@@ -193,19 +218,18 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     }));
   };
 
-  const handleAddSprite = () => {
+  const handleAddSprite = (emoji: string = '🚀') => {
     const newId = `sprite_${Date.now()}`;
     const newSprite: SpriteTarget = {
       id: newId,
       name: `Sprite${project.sprites.length + 1}`,
       x: 0,
       y: 0,
-      size: 80,
+      size: 100,
       direction: 90,
       visible: true,
       rotationStyle: 'all-around',
-      costumeEmoji: '🚀',
-      color: '#34d399',
+      costumeEmoji: emoji,
       scripts: [],
     };
     setProject((prev) => ({ ...prev, sprites: [...prev.sprites, newSprite] }));
@@ -222,7 +246,36 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     }
   };
 
-  // Integrasi Upload JSON Project ke Cloud Service (Port 3001)
+  const handleCreateVariable = () => {
+    const varName = window.prompt('Masukkan nama variabel baru (contoh: darah, kecepatan, level):');
+    if (!varName || !varName.trim()) return;
+    const clean = varName.trim();
+    setProject((prev) => ({
+      ...prev,
+      variables: { ...prev.variables, [clean]: 0 },
+    }));
+  };
+
+  const handleCreateBroadcast = () => {
+    const msgName = window.prompt('Masukkan nama pesan Broadcast baru (contoh: boss_spawn, menang):');
+    if (!msgName || !msgName.trim()) return;
+    const clean = msgName.trim();
+    setProject((prev) => ({
+      ...prev,
+      broadcasts: Array.from(new Set([...(prev.broadcasts || []), clean])),
+    }));
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateActiveSpriteProp('costumeImageUrl', String(reader.result));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveToCloud = async (publish: boolean = false) => {
     setSaveStatus(publish ? 'Publishing...' : 'Saving...');
     const token = localStorage.getItem('token');
@@ -248,7 +301,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
         onGamePublished(data.gameId);
       }
     } catch {
-      // Fallback simpan ke LocalStorage agar testing tetap mulus
       localStorage.setItem('blockverse_latest_project', JSON.stringify(project));
       setSaveStatus(publish ? 'Published (Local Cache)!' : 'Saved!');
     } finally {
@@ -258,9 +310,9 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#E5F0FF] overflow-hidden select-none font-sans">
-      {/* ==================== TOP HEADER BAR (Scratch 3.0 Blue #4C97FF) ==================== */}
+      {/* ==================== TOP HEADER BAR ==================== */}
       <header className="h-12 bg-[#4C97FF] text-white flex items-center justify-between px-4 shadow-sm z-20">
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           {onBack && (
             <button
               onClick={onBack}
@@ -270,22 +322,41 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
               ← Kembali
             </button>
           )}
-
-          <div className="flex items-center space-x-1.5 font-black text-xl tracking-tight bg-white/15 px-2.5 py-1 rounded-md">
+          <div className="flex items-center space-x-1.5 font-black text-lg tracking-tight bg-white/15 px-2.5 py-1 rounded-md">
             <span className="text-amber-300">BLOCK</span>
             <span>VERSE</span>
+          </div>
+
+          {/* Pemilih Template / Blank Project */}
+          <div className="flex items-center bg-white/20 rounded-md px-2 py-1 text-xs">
+            <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+            <select
+              onChange={(e) => handleSelectTemplate(e.target.value)}
+              className="bg-transparent text-white font-semibold outline-none cursor-pointer"
+              defaultValue="blank"
+            >
+              <option value="blank" className="text-slate-900">
+                🆕 Blank Project (Bebas)
+              </option>
+              <option value="coin" className="text-slate-900">
+                🪙 Preset: Coin Hunter RPG
+              </option>
+              <option value="space" className="text-slate-900">
+                👾 Preset: Space Invaders
+              </option>
+            </select>
           </div>
 
           <input
             type="text"
             value={project.title}
             onChange={(e) => setProject({ ...project, title: e.target.value })}
-            className="bg-white/20 hover:bg-white/30 focus:bg-white focus:text-slate-900 text-white font-semibold px-3 py-1 rounded-md text-sm outline-none transition w-52"
-            placeholder="Project Title..."
+            className="bg-white/20 hover:bg-white/30 focus:bg-white focus:text-slate-900 text-white font-semibold px-3 py-1 rounded-md text-sm outline-none transition w-48"
+            placeholder="Judul Game..."
           />
 
           <button
-            onClick={() => handleSaveToCloud( true )}
+            onClick={() => handleSaveToCloud(true)}
             className="bg-[#FF8C1A] hover:bg-[#e67e17] text-white font-bold text-xs px-3.5 py-1.5 rounded-md flex items-center gap-1.5 shadow-sm transition"
           >
             <Share2 className="w-3.5 h-3.5" />
@@ -293,7 +364,20 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
           </button>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleCreateVariable}
+            className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-md font-semibold flex items-center gap-1"
+          >
+            <PlusCircle className="w-3.5 h-3.5" /> + Variable
+          </button>
+          <button
+            onClick={handleCreateBroadcast}
+            className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-md font-semibold flex items-center gap-1"
+          >
+            <PlusCircle className="w-3.5 h-3.5" /> + Broadcast
+          </button>
+
           {saveStatus && (
             <span className="text-xs bg-emerald-500/90 px-2.5 py-1 rounded flex items-center gap-1 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -312,7 +396,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
 
       {/* ==================== SUB-HEADER TABS & STAGE CONTROLS ==================== */}
       <div className="h-10 bg-[#E5F0FF] flex items-center justify-between px-3 border-b border-slate-300">
-        {/* Tabs Kiri: Code / Costumes / Sounds */}
         <div className="flex items-center space-x-1 pt-1">
           <button
             onClick={() => setActiveTab('code')}
@@ -332,7 +415,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
                 : 'bg-[#D9E3F2] text-slate-600 border-transparent hover:bg-white/60'
             }`}
           >
-            <Palette className="w-4 h-4" /> Costumes
+            <Palette className="w-4 h-4" /> Costumes & Backdrop
           </button>
           <button
             onClick={() => setActiveTab('sounds')}
@@ -346,7 +429,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
           </button>
         </div>
 
-        {/* Kontrol Bendera Hijau & Stop Merah di Atas Stage */}
         <div className="w-[496px] flex items-center justify-between px-1">
           <div className="flex items-center space-x-2">
             <button
@@ -369,9 +451,9 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
                   ...prev,
                   {
                     id: `note_${Date.now()}`,
-                    text: 'Write logic note for this sprite...',
-                    x: 360,
-                    y: 120,
+                    text: 'Catatan logika untuk sprite ini...',
+                    x: 340,
+                    y: 80,
                   },
                 ])
               }
@@ -380,83 +462,185 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
               <StickyNote className="w-3.5 h-3.5" /> + Comment
             </button>
           </div>
-          <Maximize2 className="w-4 h-4 text-slate-500 cursor-pointer hover:text-slate-800" />
         </div>
       </div>
 
       {/* ==================== MAIN STUDIO WORKSPACE & RIGHT STAGE ==================== */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 1. KIRI: Category Rail Bulat Berwarna (Persis Scratch 3.0) */}
-        <div className="w-16 bg-white border-r border-slate-300 flex flex-col items-center py-3 space-y-3 z-10">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`flex flex-col items-center w-full py-1 transition ${
-                activeCategory === cat.id
-                  ? 'bg-blue-50/80 font-bold text-slate-900'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span
-                className="w-5 h-5 rounded-full mb-1 border border-black/10 shadow-inner"
-                style={{ backgroundColor: cat.color }}
-              />
-              <span className="text-[10px] tracking-tight">{cat.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* 2. TENGAH: Infinite Blockly SVG Canvas + Watermark Sprite + Sticky Comments */}
-        <div className="flex-1 relative bg-[#F9F9F9] border-r border-slate-300 overflow-hidden">
-          <div ref={blocklyDivRef} className="w-full h-full" />
-
-          {/* Watermark Sprite Aktif di Pojok Kanan Atas Workspace */}
-          <div className="absolute top-4 right-5 pointer-events-none opacity-25 flex flex-col items-center">
-            <span className="text-5xl">{activeSprite.costumeEmoji}</span>
-            <span className="text-xs font-bold text-slate-700 mt-1">
-              {activeSprite.name}
-            </span>
+        {/* KIRI: Category Rail */}
+        {activeTab === 'code' && (
+          <div className="w-16 bg-white border-r border-slate-300 flex flex-col items-center py-3 space-y-3 z-10">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={`flex flex-col items-center w-full py-1 transition ${
+                  activeCategory === cat.id
+                    ? 'bg-blue-50/80 font-bold text-slate-900'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span
+                  className="w-5 h-5 rounded-full mb-1 border border-black/10 shadow-inner"
+                  style={{ backgroundColor: cat.color }}
+                />
+                <span className="text-[10px] tracking-tight">{cat.label}</span>
+              </button>
+            ))}
           </div>
+        )}
 
-          {/* Sticky Notes Kuning (Persis Catatan Kuning di Screenshot Space Invaders) */}
-          {comments.map((note) => (
-            <div
-              key={note.id}
-              style={{ left: note.x, top: note.y }}
-              className="absolute w-56 bg-[#FEF49C] border border-[#E2D56B] rounded shadow-md z-10 text-xs text-slate-800"
-            >
-              <div className="bg-[#F2E479] px-2 py-1 flex items-center justify-between border-b border-[#E2D56B]">
-                <span className="font-bold text-[10px] text-amber-900">
-                  Block Note
-                </span>
-                <button
-                  onClick={() =>
-                    setComments((prev) => prev.filter((c) => c.id !== note.id))
-                  }
-                >
-                  <X className="w-3 h-3 text-slate-600 hover:text-slate-900" />
-                </button>
+        {/* TENGAH: Blockly Canvas ATAU Editor Kostum & Latar Belakang */}
+        <div className="flex-1 relative bg-[#F9F9F9] border-r border-slate-300 overflow-hidden">
+          {/* Workspace Blockly (Tetap dirender agar state tidak hilang saat pindah tab) */}
+          <div
+            ref={blocklyDivRef}
+            className={`w-full h-full ${activeTab === 'code' ? 'block' : 'hidden'}`}
+          />
+
+          {/* TAB COSTUMES & STAGE BACKDROP */}
+          {activeTab === 'costumes' && (
+            <div className="p-6 h-full overflow-y-auto bg-white space-y-6">
+              <div>
+                <h2 className="text-base font-bold text-slate-800 mb-1">
+                  Kostum Sprite: <span className="text-[#4C97FF]">{activeSprite.name}</span>
+                </h2>
+                <p className="text-xs text-slate-500 mb-4">
+                  Pilih karakter dari galeri di bawah atau unggah gambar PNG/SVG/GIF milikmu sendiri.
+                </p>
+
+                <div className="grid grid-cols-8 gap-2.5 mb-4">
+                  {SPRITE_GALLERY_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        updateActiveSpriteProp('costumeEmoji', emoji);
+                        updateActiveSpriteProp('costumeImageUrl', undefined);
+                      }}
+                      className={`text-3xl p-3 rounded-xl border-2 flex items-center justify-center transition ${
+                        activeSprite.costumeEmoji === emoji && !activeSprite.costumeImageUrl
+                          ? 'border-[#4C97FF] bg-blue-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="inline-flex items-center gap-2 bg-[#4C97FF] hover:bg-blue-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg cursor-pointer transition">
+                  <Upload className="w-4 h-4" />
+                  Upload Gambar Sprite (PNG/SVG)
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              <textarea
-                value={note.text}
-                onChange={(e) =>
-                  setComments((prev) =>
-                    prev.map((c) =>
-                      c.id === note.id ? { ...c, text: e.target.value } : c
-                    )
-                  )
-                }
-                rows={4}
-                className="w-full bg-transparent p-2 outline-none resize-none leading-relaxed font-medium"
-              />
+
+              <hr className="border-slate-200" />
+
+              {/* Pengaturan Tema Latar Belakang Stage */}
+              <div>
+                <h3 className="text-base font-bold text-slate-800 mb-2">
+                  Tema Latar Belakang Stage (Backdrop)
+                </h3>
+                <div className="flex flex-wrap gap-3 items-center">
+                  {[
+                    { id: 'grid', label: '📐 Kanvas Grid Putih', bg: '#ffffff' },
+                    { id: 'sky', label: '🌤️ Padang Rumput & Langit', bg: '#e0f2fe' },
+                    { id: 'stars', label: '🌌 Luar Angkasa', bg: '#05070d' },
+                    { id: 'none', label: '🏰 Dungeon Gelap', bg: '#1e1b4b' },
+                  ].map((theme) => (
+                    <button
+                      key={theme.id}
+                      onClick={() =>
+                        setProject((prev) => ({
+                          ...prev,
+                          stagePattern: theme.id as any,
+                          stageBackdrop: theme.bg,
+                        }))
+                      }
+                      className={`px-4 py-2 rounded-lg text-xs font-bold border-2 transition ${
+                        project.stagePattern === theme.id
+                          ? 'border-[#4C97FF] bg-blue-50 text-[#4C97FF]'
+                          : 'border-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {theme.label}
+                    </button>
+                  ))}
+
+                  <div className="flex items-center gap-2 ml-2">
+                    <span className="text-xs font-semibold text-slate-600">Warna Kustom:</span>
+                    <input
+                      type="color"
+                      value={project.stageBackdrop}
+                      onChange={(e) =>
+                        setProject((prev) => ({
+                          ...prev,
+                          stagePattern: 'none',
+                          stageBackdrop: e.target.value,
+                        }))
+                      }
+                      className="w-8 h-8 rounded cursor-pointer border border-slate-300"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* Watermark Sprite Aktif */}
+          {activeTab === 'code' && (
+            <div className="absolute top-4 right-5 pointer-events-none opacity-25 flex flex-col items-center">
+              <span className="text-5xl">{activeSprite.costumeEmoji}</span>
+              <span className="text-xs font-bold text-slate-700 mt-1">
+                {activeSprite.name}
+              </span>
+            </div>
+          )}
+
+          {/* Sticky Notes Kuning */}
+          {activeTab === 'code' &&
+            comments.map((note) => (
+              <div
+                key={note.id}
+                style={{ left: note.x, top: note.y }}
+                className="absolute w-56 bg-[#FEF49C] border border-[#E2D56B] rounded shadow-md z-10 text-xs text-slate-800"
+              >
+                <div className="bg-[#F2E479] px-2 py-1 flex items-center justify-between border-b border-[#E2D56B]">
+                  <span className="font-bold text-[10px] text-amber-900">
+                    Block Note
+                  </span>
+                  <button
+                    onClick={() =>
+                      setComments((prev) => prev.filter((c) => c.id !== note.id))
+                    }
+                  >
+                    <X className="w-3 h-3 text-slate-600 hover:text-slate-900" />
+                  </button>
+                </div>
+                <textarea
+                  value={note.text}
+                  onChange={(e) =>
+                    setComments((prev) =>
+                      prev.map((c) =>
+                        c.id === note.id ? { ...c, text: e.target.value } : c
+                      )
+                    )
+                  }
+                  rows={4}
+                  className="w-full bg-transparent p-2 outline-none resize-none leading-relaxed font-medium"
+                />
+              </div>
+            ))}
         </div>
 
-        {/* 3. KANAN: Live Stage (480x360) + Sprite Inspector + Sprite Selector Grid */}
+        {/* KANAN: Live Stage (480x360) + Sprite Inspector + Sprite Selector Grid */}
         <div className="w-[496px] bg-[#E5F0FF] p-2 flex flex-col space-y-2 overflow-y-auto">
-          {/* Live Stage 480x360 */}
           <div className="bg-black rounded-lg overflow-hidden border border-slate-300 shadow-sm flex items-center justify-center">
             <canvas
               ref={stageCanvasRef}
@@ -487,7 +671,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
                   onChange={(e) =>
                     updateActiveSpriteProp('x', Number(e.target.value))
                   }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold"
+                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
                 />
               </div>
 
@@ -499,7 +683,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
                   onChange={(e) =>
                     updateActiveSpriteProp('y', Number(e.target.value))
                   }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold"
+                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
                 />
               </div>
             </div>
@@ -537,7 +721,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
                   onChange={(e) =>
                     updateActiveSpriteProp('size', Number(e.target.value))
                   }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold"
+                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
                 />
               </div>
 
@@ -549,7 +733,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
                   onChange={(e) =>
                     updateActiveSpriteProp('direction', Number(e.target.value))
                   }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold"
+                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
                 />
               </div>
             </div>
@@ -594,8 +778,8 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             </div>
 
             <button
-              onClick={handleAddSprite}
-              title="Add New Sprite"
+              onClick={() => handleAddSprite('🐱')}
+              title="Tambah Sprite Baru"
               className="fixed bottom-5 right-5 bg-[#4C97FF] hover:bg-[#3b82f6] text-white p-3 rounded-full shadow-lg transition"
             >
               <Plus className="w-5 h-5" />
@@ -606,83 +790,3 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     </div>
   );
 };
-
-// Helper: Mengisi Workspace awal dengan susunan blok visual Space Invaders
-function seedDefaultVisualBlocks(workspace: Blockly.WorkspaceSvg) {
-  const xmlText = `
-    <xml xmlns="https://developers.google.com/blockly/xml">
-      <block type="event_whenflagclicked" x="25" y="20">
-        <next>
-          <block type="looks_setsizeto">
-            <value name="SIZE"><shadow type="math_number"><field name="NUM">60</field></shadow></value>
-            <next>
-              <block type="motion_gotoxy">
-                <value name="X"><shadow type="math_number"><field name="NUM">-150</field></shadow></value>
-                <value name="Y"><shadow type="math_number"><field name="NUM">130</field></shadow></value>
-                <next>
-                  <block type="control_repeat">
-                    <value name="TIMES"><shadow type="math_number"><field name="NUM">6</field></shadow></value>
-                    <statement name="SUBSTACK">
-                      <block type="control_create_clone_of">
-                        <field name="CLONE_OPTION">alien</field>
-                        <next>
-                          <block type="motion_changexby">
-                            <value name="DX"><shadow type="math_number"><field name="NUM">50</field></shadow></value>
-                          </block>
-                        </next>
-                      </block>
-                    </statement>
-                  </block>
-                </next>
-              </block>
-            </next>
-          </block>
-        </next>
-      </block>
-
-      <block type="control_start_as_clone" x="260" y="20">
-        <next>
-          <block type="looks_show">
-            <next>
-              <block type="control_forever">
-                <statement name="SUBSTACK">
-                  <block type="motion_movesteps">
-                    <value name="STEPS"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
-                    <next>
-                      <block type="motion_ifonedgebounce">
-                        <next>
-                          <block type="control_if">
-                            <value name="CONDITION">
-                              <block type="sensing_touchingobject">
-                                <field name="TOUCHINGOBJECTMENU">laser</field>
-                              </block>
-                            </value>
-                            <statement name="SUBSTACK">
-                              <block type="data_changevariableby">
-                                <field name="VARIABLE">score</field>
-                                <value name="VALUE"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
-                                <next>
-                                  <block type="control_delete_this_clone"></block>
-                                </next>
-                              </block>
-                            </statement>
-                          </block>
-                        </next>
-                      </block>
-                    </next>
-                  </block>
-                </statement>
-              </block>
-            </next>
-          </block>
-        </next>
-      </block>
-    </xml>
-  `;
-  try {
-    const dom = Blockly.utils.xml.textToDom(xmlText);
-    Blockly.Xml.domToWorkspace(dom, workspace);
-  } catch (e) {
-    console.warn('Seed XML warning:', e);
-  }
-}

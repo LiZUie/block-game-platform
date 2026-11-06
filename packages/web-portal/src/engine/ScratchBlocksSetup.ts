@@ -2,14 +2,131 @@
 import * as Blockly from 'blockly';
 import { CompiledOp, CompiledScript } from './BlockVerseEngine';
 
+// Konteks dinamis yang selalu disinkronkan dengan state Project aktif
+interface StudioDynamicContext {
+  spriteNames: string[];
+  variableNames: string[];
+  broadcastMessages: string[];
+}
+
+const dynamicContext: StudioDynamicContext = {
+  spriteNames: ['Hero'],
+  variableNames: ['score'],
+  broadcastMessages: ['message1', 'game over'],
+};
+
+export function updateStudioDynamicContext(ctx: Partial<StudioDynamicContext>) {
+  if (ctx.spriteNames && ctx.spriteNames.length > 0) dynamicContext.spriteNames = ctx.spriteNames;
+  if (ctx.variableNames && ctx.variableNames.length > 0) dynamicContext.variableNames = ctx.variableNames;
+  if (ctx.broadcastMessages && ctx.broadcastMessages.length > 0) dynamicContext.broadcastMessages = ctx.broadcastMessages;
+}
+
+const getSpriteDropdownOptions = (): [string, string][] => {
+  const sprites = dynamicContext.spriteNames.map((name) => [name, name] as [string, string]);
+  return [...sprites, ['edge', '_edge_'], ['mouse-pointer', '_mouse_']];
+};
+
+const getCloneDropdownOptions = (): [string, string][] => {
+  const sprites = dynamicContext.spriteNames.map((name) => [name, name] as [string, string]);
+  return [['myself', 'myself'], ...sprites];
+};
+
+const getVariableDropdownOptions = (): [string, string][] => {
+  return dynamicContext.variableNames.map((v) => [v, v] as [string, string]);
+};
+
+const getBroadcastDropdownOptions = (): [string, string][] => {
+  return dynamicContext.broadcastMessages.map((m) => [m, m] as [string, string]);
+};
+
 let blocksRegistered = false;
 
 export function registerScratchBlocks() {
   if (blocksRegistered) return;
   blocksRegistered = true;
 
+  // Blok dengan Dropdown Dinamis
+  Blockly.Blocks['sensing_touchingobject'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('touching')
+        .appendField(new Blockly.FieldDropdown(getSpriteDropdownOptions), 'TOUCHINGOBJECTMENU')
+        .appendField('?');
+      this.setOutput(true, 'Boolean');
+      this.setColour('#5CB1D6');
+    },
+  };
+
+  Blockly.Blocks['control_create_clone_of'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('create clone of')
+        .appendField(new Blockly.FieldDropdown(getCloneDropdownOptions), 'CLONE_OPTION');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour('#FFAB19');
+    },
+  };
+
+  Blockly.Blocks['data_variable'] = {
+    init: function () {
+      this.appendDummyInput().appendField(new Blockly.FieldDropdown(getVariableDropdownOptions), 'VARIABLE');
+      this.setOutput(true, null);
+      this.setColour('#FF8C1A');
+    },
+  };
+
+  Blockly.Blocks['data_setvariableto'] = {
+    init: function () {
+      this.appendValueInput('VALUE')
+        .appendField('set')
+        .appendField(new Blockly.FieldDropdown(getVariableDropdownOptions), 'VARIABLE')
+        .appendField('to');
+      this.setInputsInline(true);
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour('#FF8C1A');
+    },
+  };
+
+  Blockly.Blocks['data_changevariableby'] = {
+    init: function () {
+      this.appendValueInput('VALUE')
+        .setCheck('Number')
+        .appendField('change')
+        .appendField(new Blockly.FieldDropdown(getVariableDropdownOptions), 'VARIABLE')
+        .appendField('by');
+      this.setInputsInline(true);
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour('#FF8C1A');
+    },
+  };
+
+  Blockly.Blocks['event_whenireceive'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('when I receive')
+        .appendField(new Blockly.FieldDropdown(getBroadcastDropdownOptions), 'MESSAGE');
+      this.setNextStatement(true, null);
+      this.setColour('#FFBF00');
+    },
+  };
+
+  Blockly.Blocks['event_broadcast'] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField('broadcast')
+        .appendField(new Blockly.FieldDropdown(getBroadcastDropdownOptions), 'MESSAGE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour('#FFBF00');
+    },
+  };
+
+  // Blok Standar Lainnya (Motion, Looks, Events, Control, Sensing, Operators)
   Blockly.defineBlocksWithJsonArray([
-    // ==================== EVENTS (Kuning #FFBF00) ====================
+    // EVENTS
     {
       type: 'event_whenflagclicked',
       message0: 'when 🚩 clicked',
@@ -26,55 +143,24 @@ export function registerScratchBlocks() {
           name: 'KEY',
           options: [
             ['space', 'space'],
-            ['left arrow', 'arrowleft'],
-            ['right arrow', 'arrowright'],
             ['up arrow', 'arrowup'],
             ['down arrow', 'arrowdown'],
+            ['left arrow', 'arrowleft'],
+            ['right arrow', 'arrowright'],
+            ['w', 'w'],
+            ['a', 'a'],
+            ['s', 's'],
+            ['d', 'd'],
+            ['any', 'any'],
           ],
         },
       ],
       nextStatement: null,
       colour: '#FFBF00',
       hat: 'cap',
-    },
-    {
-      type: 'event_whenireceive',
-      message0: 'when I receive %1',
-      args0: [
-        {
-          type: 'field_dropdown',
-          name: 'MESSAGE',
-          options: [
-            ['alien_hit', 'alien_hit'],
-            ['march', 'march'],
-            ['game over', 'game over'],
-          ],
-        },
-      ],
-      nextStatement: null,
-      colour: '#FFBF00',
-      hat: 'cap',
-    },
-    {
-      type: 'event_broadcast',
-      message0: 'broadcast %1',
-      args0: [
-        {
-          type: 'field_dropdown',
-          name: 'MESSAGE',
-          options: [
-            ['alien_hit', 'alien_hit'],
-            ['march', 'march'],
-            ['game over', 'game over'],
-          ],
-        },
-      ],
-      previousStatement: null,
-      nextStatement: null,
-      colour: '#FFBF00',
     },
 
-    // ==================== MOTION (Biru #4C97FF) ====================
+    // MOTION
     {
       type: 'motion_movesteps',
       message0: 'move %1 steps',
@@ -92,6 +178,22 @@ export function registerScratchBlocks() {
       colour: '#4C97FF',
     },
     {
+      type: 'motion_turnleft',
+      message0: 'turn ↺ %1 degrees',
+      args0: [{ type: 'input_value', name: 'DEGREES', check: 'Number' }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'motion_pointindirection',
+      message0: 'point in direction %1',
+      args0: [{ type: 'input_value', name: 'DIRECTION', check: 'Number' }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
       type: 'motion_gotoxy',
       message0: 'go to x: %1 y: %2',
       args0: [
@@ -99,6 +201,13 @@ export function registerScratchBlocks() {
         { type: 'input_value', name: 'Y', check: 'Number' },
       ],
       inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'motion_gotorandom',
+      message0: 'go to random position',
       previousStatement: null,
       nextStatement: null,
       colour: '#4C97FF',
@@ -155,11 +264,31 @@ export function registerScratchBlocks() {
       colour: '#4C97FF',
     },
 
-    // ==================== LOOKS (Ungu #9966FF) ====================
+    // LOOKS
+    {
+      type: 'looks_sayforsecs',
+      message0: 'say %1 for %2 seconds',
+      args0: [
+        { type: 'input_value', name: 'MESSAGE' },
+        { type: 'input_value', name: 'SECS', check: 'Number' },
+      ],
+      inputsInline: true,
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#9966FF',
+    },
     {
       type: 'looks_setsizeto',
       message0: 'set size to %1 %%',
       args0: [{ type: 'input_value', name: 'SIZE', check: 'Number' }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#9966FF',
+    },
+    {
+      type: 'looks_changesizeby',
+      message0: 'change size by %1',
+      args0: [{ type: 'input_value', name: 'CHANGE', check: 'Number' }],
       previousStatement: null,
       nextStatement: null,
       colour: '#9966FF',
@@ -179,7 +308,7 @@ export function registerScratchBlocks() {
       colour: '#9966FF',
     },
 
-    // ==================== CONTROL (Oranye #FFAB19) ====================
+    // CONTROL
     {
       type: 'control_wait',
       message0: 'wait %1 seconds',
@@ -223,6 +352,20 @@ export function registerScratchBlocks() {
       colour: '#FFAB19',
     },
     {
+      type: 'control_if_else',
+      message0: 'if %1 then %2 %3 else %4 %5',
+      args0: [
+        { type: 'input_value', name: 'CONDITION', check: 'Boolean' },
+        { type: 'input_dummy' },
+        { type: 'input_statement', name: 'SUBSTACK' },
+        { type: 'input_dummy' },
+        { type: 'input_statement', name: 'SUBSTACK2' },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#FFAB19',
+    },
+    {
       type: 'control_start_as_clone',
       message0: 'when I start as a clone',
       nextStatement: null,
@@ -230,50 +373,19 @@ export function registerScratchBlocks() {
       hat: 'cap',
     },
     {
-      type: 'control_create_clone_of',
-      message0: 'create clone of %1',
-      args0: [
-        {
-          type: 'field_dropdown',
-          name: 'CLONE_OPTION',
-          options: [
-            ['alien', 'alien'],
-            ['laser', 'laser'],
-            ['Alien Laser', 'Alien Laser'],
-            ['myself', 'myself'],
-          ],
-        },
-      ],
-      previousStatement: null,
-      nextStatement: null,
-      colour: '#FFAB19',
-    },
-    {
       type: 'control_delete_this_clone',
       message0: 'delete this clone',
       previousStatement: null,
       colour: '#FFAB19',
     },
-
-    // ==================== SENSING (Biru Muda #5CB1D6) ====================
     {
-      type: 'sensing_touchingobject',
-      message0: 'touching %1 ?',
-      args0: [
-        {
-          type: 'field_dropdown',
-          name: 'TOUCHINGOBJECTMENU',
-          options: [
-            ['laser', 'laser'],
-            ['alien', 'alien'],
-            ['Player Ship', 'Player Ship'],
-            ['Alien Laser', 'Alien Laser'],
-          ],
-        },
-      ],
-      output: 'Boolean',
-      colour: '#5CB1D6',
+      type: 'control_stop_all',
+      message0: 'stop all',
+      previousStatement: null,
+      colour: '#FFAB19',
     },
+
+    // SENSING
     {
       type: 'sensing_keypressed',
       message0: 'key %1 pressed?',
@@ -283,16 +395,78 @@ export function registerScratchBlocks() {
           name: 'KEY_OPTION',
           options: [
             ['space', 'space'],
+            ['up arrow', 'arrowup'],
+            ['down arrow', 'arrowdown'],
             ['left arrow', 'arrowleft'],
             ['right arrow', 'arrowright'],
+            ['w', 'w'],
+            ['a', 'a'],
+            ['s', 's'],
+            ['d', 'd'],
           ],
         },
       ],
       output: 'Boolean',
       colour: '#5CB1D6',
     },
+    {
+      type: 'sensing_mousex',
+      message0: 'mouse x',
+      output: 'Number',
+      colour: '#5CB1D6',
+    },
+    {
+      type: 'sensing_mousey',
+      message0: 'mouse y',
+      output: 'Number',
+      colour: '#5CB1D6',
+    },
 
-    // ==================== OPERATORS (Hijau #59C059) ====================
+    // OPERATORS (Lengkap Matematika + Logika)
+    {
+      type: 'operator_add',
+      message0: '%1 + %2',
+      args0: [
+        { type: 'input_value', name: 'NUM1', check: 'Number' },
+        { type: 'input_value', name: 'NUM2', check: 'Number' },
+      ],
+      inputsInline: true,
+      output: 'Number',
+      colour: '#59C059',
+    },
+    {
+      type: 'operator_subtract',
+      message0: '%1 - %2',
+      args0: [
+        { type: 'input_value', name: 'NUM1', check: 'Number' },
+        { type: 'input_value', name: 'NUM2', check: 'Number' },
+      ],
+      inputsInline: true,
+      output: 'Number',
+      colour: '#59C059',
+    },
+    {
+      type: 'operator_multiply',
+      message0: '%1 * %2',
+      args0: [
+        { type: 'input_value', name: 'NUM1', check: 'Number' },
+        { type: 'input_value', name: 'NUM2', check: 'Number' },
+      ],
+      inputsInline: true,
+      output: 'Number',
+      colour: '#59C059',
+    },
+    {
+      type: 'operator_divide',
+      message0: '%1 / %2',
+      args0: [
+        { type: 'input_value', name: 'NUM1', check: 'Number' },
+        { type: 'input_value', name: 'NUM2', check: 'Number' },
+      ],
+      inputsInline: true,
+      output: 'Number',
+      colour: '#59C059',
+    },
     {
       type: 'operator_random',
       message0: 'pick random %1 to %2',
@@ -302,6 +476,17 @@ export function registerScratchBlocks() {
       ],
       inputsInline: true,
       output: 'Number',
+      colour: '#59C059',
+    },
+    {
+      type: 'operator_gt',
+      message0: '%1 > %2',
+      args0: [
+        { type: 'input_value', name: 'OPERAND1' },
+        { type: 'input_value', name: 'OPERAND2' },
+      ],
+      inputsInline: true,
+      output: 'Boolean',
       colour: '#59C059',
     },
     {
@@ -326,67 +511,38 @@ export function registerScratchBlocks() {
       output: 'Boolean',
       colour: '#59C059',
     },
+    {
+      type: 'operator_and',
+      message0: '%1 and %2',
+      args0: [
+        { type: 'input_value', name: 'OPERAND1', check: 'Boolean' },
+        { type: 'input_value', name: 'OPERAND2', check: 'Boolean' },
+      ],
+      inputsInline: true,
+      output: 'Boolean',
+      colour: '#59C059',
+    },
+    {
+      type: 'operator_or',
+      message0: '%1 or %2',
+      args0: [
+        { type: 'input_value', name: 'OPERAND1', check: 'Boolean' },
+        { type: 'input_value', name: 'OPERAND2', check: 'Boolean' },
+      ],
+      inputsInline: true,
+      output: 'Boolean',
+      colour: '#59C059',
+    },
+    {
+      type: 'operator_not',
+      message0: 'not %1',
+      args0: [{ type: 'input_value', name: 'OPERAND', check: 'Boolean' }],
+      inputsInline: true,
+      output: 'Boolean',
+      colour: '#59C059',
+    },
 
-    // ==================== VARIABLES & CLOUD (Oranye Tua #FF8C1A) ====================
-    {
-      type: 'data_variable',
-      message0: '%1',
-      args0: [
-        {
-          type: 'field_dropdown',
-          name: 'VARIABLE',
-          options: [
-            ['score', 'score'],
-            ['alien-count', 'alien-count'],
-            ['march-steps', 'march-steps'],
-            ['isClone', 'isClone'],
-          ],
-        },
-      ],
-      output: null,
-      colour: '#FF8C1A',
-    },
-    {
-      type: 'data_setvariableto',
-      message0: 'set %1 to %2',
-      args0: [
-        {
-          type: 'field_dropdown',
-          name: 'VARIABLE',
-          options: [
-            ['score', 'score'],
-            ['alien-count', 'alien-count'],
-            ['march-steps', 'march-steps'],
-            ['isClone', 'isClone'],
-          ],
-        },
-        { type: 'input_value', name: 'VALUE' },
-      ],
-      inputsInline: true,
-      previousStatement: null,
-      nextStatement: null,
-      colour: '#FF8C1A',
-    },
-    {
-      type: 'data_changevariableby',
-      message0: 'change %1 by %2',
-      args0: [
-        {
-          type: 'field_dropdown',
-          name: 'VARIABLE',
-          options: [
-            ['score', 'score'],
-            ['alien-count', 'alien-count'],
-            ['march-steps', 'march-steps'],
-          ],
-        },
-        { type: 'input_value', name: 'VALUE', check: 'Number' },
-      ],
-      inputsInline: true,
-      previousStatement: null,
-      nextStatement: null,
-      colour: '#FF8C1A',
-    },
+    // CLOUD LEADERBOARD
     {
       type: 'cloud_submit_score',
       message0: '🏆 submit score %1 to Cloud Leaderboard',
@@ -398,29 +554,40 @@ export function registerScratchBlocks() {
   ]);
 }
 
-// Konfigurasi Flyout Kategori Blok
 export const CATEGORY_BLOCKS: Record<string, any[]> = {
   Motion: [
     { kind: 'block', type: 'motion_movesteps', inputs: { STEPS: { shadow: { type: 'math_number', fields: { NUM: 10 } } } } },
     { kind: 'block', type: 'motion_turnright', inputs: { DEGREES: { shadow: { type: 'math_number', fields: { NUM: 15 } } } } },
+    { kind: 'block', type: 'motion_turnleft', inputs: { DEGREES: { shadow: { type: 'math_number', fields: { NUM: 15 } } } } },
+    { kind: 'block', type: 'motion_pointindirection', inputs: { DIRECTION: { shadow: { type: 'math_number', fields: { NUM: 90 } } } } },
+    { kind: 'block', type: 'motion_gotorandom' },
     {
       kind: 'block',
       type: 'motion_gotoxy',
       inputs: {
-        X: { shadow: { type: 'math_number', fields: { NUM: -150 } } },
-        Y: { shadow: { type: 'math_number', fields: { NUM: 140 } } },
+        X: { shadow: { type: 'math_number', fields: { NUM: 0 } } },
+        Y: { shadow: { type: 'math_number', fields: { NUM: 0 } } },
       },
     },
-    { kind: 'block', type: 'motion_changexby', inputs: { DX: { shadow: { type: 'math_number', fields: { NUM: 50 } } } } },
-    { kind: 'block', type: 'motion_setx', inputs: { X: { shadow: { type: 'math_number', fields: { NUM: -150 } } } } },
-    { kind: 'block', type: 'motion_changeyby', inputs: { DY: { shadow: { type: 'math_number', fields: { NUM: -30 } } } } },
-    { kind: 'block', type: 'motion_sety', inputs: { Y: { shadow: { type: 'math_number', fields: { NUM: 20 } } } } },
+    { kind: 'block', type: 'motion_changexby', inputs: { DX: { shadow: { type: 'math_number', fields: { NUM: 10 } } } } },
+    { kind: 'block', type: 'motion_setx', inputs: { X: { shadow: { type: 'math_number', fields: { NUM: 0 } } } } },
+    { kind: 'block', type: 'motion_changeyby', inputs: { DY: { shadow: { type: 'math_number', fields: { NUM: 10 } } } } },
+    { kind: 'block', type: 'motion_sety', inputs: { Y: { shadow: { type: 'math_number', fields: { NUM: 0 } } } } },
     { kind: 'block', type: 'motion_ifonedgebounce' },
     { kind: 'block', type: 'motion_xposition' },
     { kind: 'block', type: 'motion_yposition' },
   ],
   Looks: [
-    { kind: 'block', type: 'looks_setsizeto', inputs: { SIZE: { shadow: { type: 'math_number', fields: { NUM: 60 } } } } },
+    {
+      kind: 'block',
+      type: 'looks_sayforsecs',
+      inputs: {
+        MESSAGE: { shadow: { type: 'text', fields: { TEXT: 'Hello!' } } },
+        SECS: { shadow: { type: 'math_number', fields: { NUM: 2 } } },
+      },
+    },
+    { kind: 'block', type: 'looks_setsizeto', inputs: { SIZE: { shadow: { type: 'math_number', fields: { NUM: 100 } } } } },
+    { kind: 'block', type: 'looks_changesizeby', inputs: { CHANGE: { shadow: { type: 'math_number', fields: { NUM: 10 } } } } },
     { kind: 'block', type: 'looks_show' },
     { kind: 'block', type: 'looks_hide' },
   ],
@@ -432,42 +599,89 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
   ],
   Control: [
     { kind: 'block', type: 'control_wait', inputs: { DURATION: { shadow: { type: 'math_number', fields: { NUM: 1 } } } } },
-    { kind: 'block', type: 'control_repeat', inputs: { TIMES: { shadow: { type: 'math_number', fields: { NUM: 7 } } } } },
+    { kind: 'block', type: 'control_repeat', inputs: { TIMES: { shadow: { type: 'math_number', fields: { NUM: 10 } } } } },
     { kind: 'block', type: 'control_forever' },
     { kind: 'block', type: 'control_if' },
+    { kind: 'block', type: 'control_if_else' },
     { kind: 'block', type: 'control_start_as_clone' },
     { kind: 'block', type: 'control_create_clone_of' },
     { kind: 'block', type: 'control_delete_this_clone' },
+    { kind: 'block', type: 'control_stop_all' },
   ],
   Sensing: [
     { kind: 'block', type: 'sensing_touchingobject' },
     { kind: 'block', type: 'sensing_keypressed' },
+    { kind: 'block', type: 'sensing_mousex' },
+    { kind: 'block', type: 'sensing_mousey' },
   ],
   Operators: [
+    {
+      kind: 'block',
+      type: 'operator_add',
+      inputs: {
+        NUM1: { shadow: { type: 'math_number', fields: { NUM: 1 } } },
+        NUM2: { shadow: { type: 'math_number', fields: { NUM: 1 } } },
+      },
+    },
+    {
+      kind: 'block',
+      type: 'operator_subtract',
+      inputs: {
+        NUM1: { shadow: { type: 'math_number', fields: { NUM: 10 } } },
+        NUM2: { shadow: { type: 'math_number', fields: { NUM: 5 } } },
+      },
+    },
+    {
+      kind: 'block',
+      type: 'operator_multiply',
+      inputs: {
+        NUM1: { shadow: { type: 'math_number', fields: { NUM: 2 } } },
+        NUM2: { shadow: { type: 'math_number', fields: { NUM: 3 } } },
+      },
+    },
+    {
+      kind: 'block',
+      type: 'operator_divide',
+      inputs: {
+        NUM1: { shadow: { type: 'math_number', fields: { NUM: 10 } } },
+        NUM2: { shadow: { type: 'math_number', fields: { NUM: 2 } } },
+      },
+    },
     {
       kind: 'block',
       type: 'operator_random',
       inputs: {
         FROM: { shadow: { type: 'math_number', fields: { NUM: 1 } } },
-        TO: { shadow: { type: 'math_number', fields: { NUM: 20 } } },
+        TO: { shadow: { type: 'math_number', fields: { NUM: 10 } } },
+      },
+    },
+    {
+      kind: 'block',
+      type: 'operator_gt',
+      inputs: {
+        OPERAND1: { shadow: { type: 'math_number', fields: { NUM: 50 } } },
+        OPERAND2: { shadow: { type: 'math_number', fields: { NUM: 10 } } },
       },
     },
     {
       kind: 'block',
       type: 'operator_lt',
       inputs: {
-        OPERAND1: { block: { type: 'motion_yposition' } },
-        OPERAND2: { shadow: { type: 'math_number', fields: { NUM: -130 } } },
+        OPERAND1: { shadow: { type: 'math_number', fields: { NUM: 10 } } },
+        OPERAND2: { shadow: { type: 'math_number', fields: { NUM: 50 } } },
       },
     },
     {
       kind: 'block',
       type: 'operator_equals',
       inputs: {
-        OPERAND1: { block: { type: 'data_variable', fields: { VARIABLE: 'isClone' } } },
-        OPERAND2: { shadow: { type: 'text', fields: { TEXT: 'true' } } },
+        OPERAND1: { shadow: { type: 'math_number', fields: { NUM: 0 } } },
+        OPERAND2: { shadow: { type: 'math_number', fields: { NUM: 0 } } },
       },
     },
+    { kind: 'block', type: 'operator_and' },
+    { kind: 'block', type: 'operator_or' },
+    { kind: 'block', type: 'operator_not' },
   ],
   Variables: [
     { kind: 'block', type: 'data_variable' },
@@ -484,12 +698,12 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     {
       kind: 'block',
       type: 'cloud_submit_score',
-      inputs: { SCORE: { block: { type: 'data_variable', fields: { VARIABLE: 'score' } } } },
+      inputs: { SCORE: { block: { type: 'data_variable' } } },
     },
   ],
 };
 
-// Compiler dari Workspace Blockly ke AST Runtime
+// Compiler dari Blockly ke AST Runtime
 function compileInputValue(block: Blockly.Block | null): any {
   if (!block) return 0;
   switch (block.type) {
@@ -503,36 +717,36 @@ function compileInputValue(block: Blockly.Block | null): any {
       return { type: 'X_POS' };
     case 'motion_yposition':
       return { type: 'Y_POS' };
+    case 'sensing_mousex':
+      return { type: 'MOUSE_X' };
+    case 'sensing_mousey':
+      return { type: 'MOUSE_Y' };
+    case 'operator_add':
+      return { type: 'MATH', op: 'ADD', a: compileInputValue(block.getInputTargetBlock('NUM1')), b: compileInputValue(block.getInputTargetBlock('NUM2')) };
+    case 'operator_subtract':
+      return { type: 'MATH', op: 'SUB', a: compileInputValue(block.getInputTargetBlock('NUM1')), b: compileInputValue(block.getInputTargetBlock('NUM2')) };
+    case 'operator_multiply':
+      return { type: 'MATH', op: 'MUL', a: compileInputValue(block.getInputTargetBlock('NUM1')), b: compileInputValue(block.getInputTargetBlock('NUM2')) };
+    case 'operator_divide':
+      return { type: 'MATH', op: 'DIV', a: compileInputValue(block.getInputTargetBlock('NUM1')), b: compileInputValue(block.getInputTargetBlock('NUM2')) };
     case 'operator_random':
-      return {
-        type: 'RANDOM',
-        min: compileInputValue(block.getInputTargetBlock('FROM')),
-        max: compileInputValue(block.getInputTargetBlock('TO')),
-      };
+      return { type: 'RANDOM', min: compileInputValue(block.getInputTargetBlock('FROM')), max: compileInputValue(block.getInputTargetBlock('TO')) };
+    case 'operator_gt':
+      return { type: 'COMPARE', op: 'GT', a: compileInputValue(block.getInputTargetBlock('OPERAND1')), b: compileInputValue(block.getInputTargetBlock('OPERAND2')) };
     case 'operator_lt':
-      return {
-        type: 'COMPARE',
-        op: 'LT',
-        a: compileInputValue(block.getInputTargetBlock('OPERAND1')),
-        b: compileInputValue(block.getInputTargetBlock('OPERAND2')),
-      };
+      return { type: 'COMPARE', op: 'LT', a: compileInputValue(block.getInputTargetBlock('OPERAND1')), b: compileInputValue(block.getInputTargetBlock('OPERAND2')) };
     case 'operator_equals':
-      return {
-        type: 'COMPARE',
-        op: 'EQ',
-        a: compileInputValue(block.getInputTargetBlock('OPERAND1')),
-        b: compileInputValue(block.getInputTargetBlock('OPERAND2')),
-      };
+      return { type: 'COMPARE', op: 'EQ', a: compileInputValue(block.getInputTargetBlock('OPERAND1')), b: compileInputValue(block.getInputTargetBlock('OPERAND2')) };
+    case 'operator_and':
+      return { type: 'LOGIC', op: 'AND', a: compileInputValue(block.getInputTargetBlock('OPERAND1')), b: compileInputValue(block.getInputTargetBlock('OPERAND2')) };
+    case 'operator_or':
+      return { type: 'LOGIC', op: 'OR', a: compileInputValue(block.getInputTargetBlock('OPERAND1')), b: compileInputValue(block.getInputTargetBlock('OPERAND2')) };
+    case 'operator_not':
+      return { type: 'LOGIC', op: 'NOT', a: compileInputValue(block.getInputTargetBlock('OPERAND')) };
     case 'sensing_touchingobject':
-      return {
-        type: 'TOUCHING',
-        target: block.getFieldValue('TOUCHINGOBJECTMENU'),
-      };
+      return { type: 'TOUCHING', target: block.getFieldValue('TOUCHINGOBJECTMENU') };
     case 'sensing_keypressed':
-      return {
-        type: 'KEY_PRESSED',
-        key: block.getFieldValue('KEY_OPTION'),
-      };
+      return { type: 'KEY_PRESSED', key: block.getFieldValue('KEY_OPTION') };
     default:
       return 0;
   }
@@ -549,6 +763,15 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
         break;
       case 'motion_turnright':
         ops.push({ op: 'TURN_RIGHT', degrees: compileInputValue(current.getInputTargetBlock('DEGREES')) });
+        break;
+      case 'motion_turnleft':
+        ops.push({ op: 'TURN_LEFT', degrees: compileInputValue(current.getInputTargetBlock('DEGREES')) });
+        break;
+      case 'motion_pointindirection':
+        ops.push({ op: 'POINT_DIRECTION', direction: compileInputValue(current.getInputTargetBlock('DIRECTION')) });
+        break;
+      case 'motion_gotorandom':
+        ops.push({ op: 'GOTO_RANDOM' });
         break;
       case 'motion_gotoxy':
         ops.push({
@@ -572,8 +795,18 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
       case 'motion_ifonedgebounce':
         ops.push({ op: 'IF_ON_EDGE_BOUNCE' });
         break;
+      case 'looks_sayforsecs':
+        ops.push({
+          op: 'SAY',
+          text: compileInputValue(current.getInputTargetBlock('MESSAGE')),
+          seconds: compileInputValue(current.getInputTargetBlock('SECS')),
+        });
+        break;
       case 'looks_setsizeto':
         ops.push({ op: 'SET_SIZE', size: compileInputValue(current.getInputTargetBlock('SIZE')) });
+        break;
+      case 'looks_changesizeby':
+        ops.push({ op: 'CHANGE_SIZE', delta: compileInputValue(current.getInputTargetBlock('CHANGE')) });
         break;
       case 'looks_show':
         ops.push({ op: 'SHOW' });
@@ -604,11 +837,22 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
           substack: compileStatementChain(current.getInputTargetBlock('SUBSTACK')),
         });
         break;
+      case 'control_if_else':
+        ops.push({
+          op: 'IF',
+          condition: compileInputValue(current.getInputTargetBlock('CONDITION')),
+          substack: compileStatementChain(current.getInputTargetBlock('SUBSTACK')),
+          elseSubstack: compileStatementChain(current.getInputTargetBlock('SUBSTACK2')),
+        });
+        break;
       case 'control_create_clone_of':
         ops.push({ op: 'CREATE_CLONE', target: current.getFieldValue('CLONE_OPTION') });
         break;
       case 'control_delete_this_clone':
         ops.push({ op: 'DELETE_CLONE' });
+        break;
+      case 'control_stop_all':
+        ops.push({ op: 'STOP_ALL' });
         break;
       case 'event_broadcast':
         ops.push({ op: 'BROADCAST', message: current.getFieldValue('MESSAGE') });
