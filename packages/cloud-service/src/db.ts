@@ -21,9 +21,18 @@ export function initDatabase() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
       created_at TEXT NOT NULL
     );
   `);
+
+  // Migration: pastikan kolom status ada jika database sudah ada sebelumnya
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE';`);
+  } catch {
+    // Abaikan jika kolom sudah ada
+  }
+  db.exec(`UPDATE users SET status = 'ACTIVE' WHERE status IS NULL OR status = '';`);
 
   // 2. Games Table
   db.exec(`
@@ -83,8 +92,8 @@ function seedInitialData() {
     const now = new Date().toISOString();
 
     const insertUser = db.prepare(`
-      INSERT INTO users (id, username, email, password_hash, role, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, username, email, password_hash, role, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     // 1. Admin (Pemilik Cloud Service)
@@ -94,6 +103,7 @@ function seedInitialData() {
       'admin@blockgame.cloud',
       bcrypt.hashSync('admin123', salt),
       UserRole.ADMIN,
+      'ACTIVE',
       now
     );
 
@@ -104,6 +114,7 @@ function seedInitialData() {
       'dev@blockgame.cloud',
       bcrypt.hashSync('dev123', salt),
       UserRole.DEVELOPER,
+      'ACTIVE',
       now
     );
 
@@ -114,6 +125,7 @@ function seedInitialData() {
       'player@blockgame.cloud',
       bcrypt.hashSync('player123', salt),
       UserRole.PLAYER,
+      'ACTIVE',
       now
     );
 

@@ -65,10 +65,15 @@ Sistem dirancang fleksibel sehingga dapat berjalan secara **On-Premise / Private
 
 ### Gerbang Login Awal & Kontrol Akses 3 Peran (RBAC)
 - **Layar Login Awal (Gateway Screen)**: Halaman pembuka layanan mewajibkan login via Username/Email dan Password. Sistem memverifikasi kredensial dan otomatis mengarahkan ke tampilan sesuai peran:
-  - **Admin**: Otomatis diarahkan ke **Dashboard Cloud Admin** (Monitoring memori/uptime server & database).
-  - **Developer**: Otomatis diarahkan ke **Developer Studio 2D** (Bisa merakit game & memainkannya).
-  - **Player**: Otomatis diarahkan ke **Katalog Game Arcade** (Hanya bisa bermain).
+  - **Admin**: Otomatis diarahkan ke **Dashboard Cloud Admin** (Monitoring memori/uptime server, approval antrean developer, & moderasi game).
+  - **Developer**: Otomatis diarahkan ke **Developer Studio 2D** (Bisa merakit game & memainkannya jika status akun `ACTIVE`).
+  - **Player**: Otomatis diarahkan ke **Katalog Game Arcade** (Bermain game dan mencetak skor leaderboard).
 - **Fitur Logout**: Tombol logout di navigasi atas untuk membersihkan token sesi dan mengembalikan pengguna ke Layar Login.
+- **Alur Persetujuan Akun Developer (Developer Account Approval Workflow)**:
+  - Setiap pengguna yang mendaftar dengan peran **Developer** awalnya berstatus `PENDING`.
+  - Akun berstatus `PENDING` belum dapat membuat atau mempublikasikan game ke server. Layar Studio menampilkan pemberitahuan verifikasi beserta tombol cek status persetujuan.
+  - Admin Cloud Service memiliki antrean khusus di dasbor admin untuk meninjau, menyetujui (**Approve** &rarr; `ACTIVE`), atau menolak (**Reject** &rarr; `REJECTED`) permohonan akun developer.
+  - Setelah disetujui Admin, status developer berubah menjadi `ACTIVE` dan dapat langsung mempublikasikan game.
 
 ---
 
@@ -76,6 +81,7 @@ Sistem dirancang fleksibel sehingga dapat berjalan secara **On-Premise / Private
 1. **Kemudahan Akses**: Kami berasumsi bahwa pengguna pemula akan 4x lebih cepat menyelesaikan pembuatan game pertamanya jika menggunakan pemrograman blok visual dibandingkan menulis kode teks tradisional.
 2. **Preferensi Pemain**: Kami berasumsi bahwa pemain kasual lebih memilih game web 2D instan (waktu muat < 1 detik) daripada harus mengunduh aplikasi game besar dari App Store/Play Store.
 3. **Efek Jaringan UGC**: Kami berasumsi bahwa memberikan akses publikasi cloud instan kepada developer akan menciptakan siklus konten organik yang mandiri, di mana developer akan membagikan tautan game buatannya kepada teman-temannya untuk dimainkan.
+4. **Keamanan Ekosistem UGC**: Kami berasumsi bahwa mewajibkan persetujuan (*approval*) akun developer oleh Admin akan mencegah spam, konten game berbahaya, dan overload server cloud.
 
 ---
 
@@ -84,13 +90,31 @@ Keberhasilan platform dievaluasi berdasarkan metrik objektif berikut dalam kurun
 
 1. **Metrik Kreator (Developer Funnel)**:
    - Terpublikasikannya game 2D aktif di katalog cloud.
-   - *ime to Publish*: Rata-rata waktu pembuatan game pertama oleh developer baru adalah **< 20 menit**.
+   - *Time to Publish*: Rata-rata waktu pembuatan game pertama oleh developer baru adalah **< 20 menit**.
+   - *Approval Response Time*: Admin dapat memproses antrean persetujuan developer rata-rata **< 15 menit**.
 2. **Metrik Pemain (Engagement & Retensi)**:
-   - Pemain dapat memainkan yang telah dibuat developer game
+   - Pemain dapat memainkan game yang telah dibuat developer tanpa hambatan instalasi.
+   - Peningkatan jumlah sesi main harian (*Daily Active Game Plays*).
 3. **Metrik Keandalan Teknis (System Reliability)**:
    - *Game Load Time*: Waktu muat awal game di browser pemain **< 1.0 detik** (p95).
    - *Crash Rate*: Tingkat kegagalan eksekusi canvas runner pada browser target adalah **< 0.1%**.
    - *Cloud API Uptime*: Ketersediaan server backend minimal **99.9%**.
+
+---
+
+## 6. Batasan & Ruang Lingkup (Scope & Boundaries)
+
+### 6.1 Dalam Ruang Lingkup (In-Scope)
+1. **Cloud Service API & Database**: Server Express + Node.js SQLite mandiri untuk autentikasi JWT, RBAC 3-peran (Admin, Developer, Player), manajemen manifest game, dan leaderboard.
+2. **Developer Studio Scratch-Style 3-Kolom**: Palet kategori blok warna Scratch 3.0, laci blok, kanvas workspace blok, simulator stage interaktif, dan sprite manager.
+3. **Multi-Genre 2D Games**: Template Dungeon Adventure (Ksatria, kunci, peti, portal), Maze Puzzle, dan Arcade Snake.
+4. **Developer Approval System**: Alur moderasi di mana Admin menyetujui akun developer sebelum fitur publikasi game diaktifkan.
+5. **Universal Canvas Runner**: Render 2D berbasis HTML5 Canvas untuk memainkan game tanpa plugin tambahan.
+
+### 6.2 Di Luar Ruang Lingkup (Out-of-Scope)
+1. Rendering 3D kompleks (seperti WebGL/Three.js fotorealistis).
+2. Transaksi uang nyata / in-app purchase (seluruh aset dan game bersifat gratis).
+3. Multiplayer real-time sinkron via WebSocket (fokus pada arsitektur turn-based / high-score asynchronous leaderboard).
 
 ---
 

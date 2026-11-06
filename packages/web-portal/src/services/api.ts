@@ -142,5 +142,49 @@ export const api = {
       body: JSON.stringify({ role })
     });
     if (!res.ok) throw new Error('Gagal mengubah role');
+  },
+
+  async getPendingDevelopers(): Promise<{ pendingUsers: UserProfile[] }> {
+    const res = await fetch(`${API_BASE}/admin/pending-developers`, {
+      headers: { ...getAuthHeader() }
+    });
+    if (!res.ok) throw new Error('Gagal mengambil daftar developer pending');
+    return res.json();
+  },
+
+  async approveDeveloper(userId: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/approve`, {
+      method: 'POST',
+      headers: { ...getAuthHeader() }
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Gagal menyetujui akun developer');
+    }
+    return res.json();
+  },
+
+  async rejectDeveloper(userId: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/reject`, {
+      method: 'POST',
+      headers: { ...getAuthHeader() }
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Gagal menolak akun developer');
+    }
+    return res.json();
+  },
+
+  async updateUserStatus(userId: string, status: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader()
+      },
+      body: JSON.stringify({ status })
+    });
+    if (!res.ok) throw new Error('Gagal mengubah status');
   }
 };

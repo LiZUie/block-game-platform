@@ -10,6 +10,7 @@ interface AuthContextType {
   register: (username: string, email: string, pass: string, role: UserRole) => Promise<UserProfile>;
   logout: () => void;
   switchQuickDemo: (role: UserRole) => Promise<UserProfile>;
+  refreshUser: () => Promise<UserProfile | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -75,8 +76,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res.user;
   };
 
+  const refreshUser = async (): Promise<UserProfile | null> => {
+    try {
+      const res = await api.getMe();
+      setUser(res.user);
+      return res.user;
+    } catch {
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, switchQuickDemo }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, switchQuickDemo, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

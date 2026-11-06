@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../db.js';
 import { generateToken, authenticateToken, AuthenticatedRequest } from '../middleware/auth.js';
-import { UserRole, UserProfile } from '@blockgame/shared';
+import { UserRole, UserProfile, AccountStatus } from '@blockgame/shared';
 
 const router = Router();
 
@@ -27,6 +27,7 @@ router.post('/login', (req: Request, res: Response) => {
     username: user.username,
     email: user.email,
     role: user.role as UserRole,
+    status: (user.status as AccountStatus) || 'ACTIVE',
     createdAt: user.created_at
   };
 
@@ -48,8 +49,10 @@ router.post('/register', (req: Request, res: Response) => {
     return res.status(409).json({ error: 'Email atau username sudah terdaftar' });
   }
 
-  // Default role adalah PLAYER jika tidak ditentukan (atau jika mencoba register admin secara publik, batasi ke PLAYER/DEVELOPER)
+  // Developer yang baru mendaftar default statusnya 'PENDING' (perlu approval Admin)
+  // Player default statusnya 'ACTIVE'
   const assignedRole = (role === UserRole.DEVELOPER) ? UserRole.DEVELOPER : UserRole.PLAYER;
+  const initialStatus: AccountStatus = (assignedRole === UserRole.DEVELOPER) ? 'PENDING' : 'ACTIVE';
 
   const id = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const salt = bcrypt.genSaltSync(10);
@@ -57,17 +60,18 @@ router.post('/register', (req: Request, res: Response) => {
   const now = new Date().toISOString();
 
   const insert = db.prepare(`
-    INSERT INTO users (id, username, email, password_hash, role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, username, email, password_hash, role, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insert.run(id, username, email, passwordHash, assignedRole, now);
+  insert.run(id, username, email, passwordHash, assignedRole, initialStatus, now);
 
   const profile: UserProfile = {
     id,
     username,
     email,
     role: assignedRole,
+    status: initialStatus,
     createdAt: now
   };
 
@@ -75,9 +79,23 @@ router.post('/register', (req: Request, res: Response) => {
   res.status(201).json({ token, user: profile });
 });
 
-// Current User Profile
+// Current User Profile (query langsung dari DB agar status selalu up to date saat admin approve)
 router.get('/me', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
-  res.json({ user: req.user });
+  const user = db.prepare('SELECT id, username, email, role, status, created_at FROM users WHERE id = ?').get(req.user!.id) as any;
+  if (!user) {
+    return res.status(404).json({ error: 'User tidak ditemukan' });
+  }
+
+  const profile: UserProfile = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role as UserRole,
+    status: (user.status as AccountStatus) || 'ACTIVE',
+    createdAt: user.created_at
+  };
+
+  res.json({ user: profile });
 });
 
 export default router;

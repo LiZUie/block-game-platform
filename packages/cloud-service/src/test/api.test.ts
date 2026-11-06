@@ -140,4 +140,97 @@ describe('Cloud Game Service API Tests', () => {
     assert.ok(data.metrics.totalUsers >= 3);
     assert.strictEqual(data.system.status, 'ONLINE');
   });
+
+  it('5. Developer Account Approval Workflow: PENDING -> Admin Approve -> ACTIVE', async () => {
+    const testDevUsername = `newdev_${Date.now()}`;
+    const testDevEmail = `${testDevUsername}@blockgame.cloud`;
+
+    // 1. Register as DEVELOPER
+    const regRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: testDevUsername,
+        email: testDevEmail,
+        password: 'password123',
+        role: 'DEVELOPER'
+      })
+    });
+    assert.strictEqual(regRes.status, 201);
+    const regData = await regRes.json() as any;
+    assert.strictEqual(regData.user.role, 'DEVELOPER');
+    assert.strictEqual(regData.user.status, 'PENDING');
+    const newDevToken = regData.token;
+    const newDevId = regData.user.id;
+
+    // 2. Pending developer CANNOT publish games yet
+    const publishAttempt = await fetch(`${baseUrl}/api/games`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${newDevToken}`
+      },
+      body: JSON.stringify({
+        title: 'Pending Game Test',
+        canvas: { width: 400, height: 400, gridSize: 20 },
+        entities: [],
+        logic: { blocks: [] }
+      })
+    });
+    assert.strictEqual(publishAttempt.status, 403);
+    const publishErr = await publishAttempt.json() as any;
+    assert.strictEqual(publishErr.status, 'PENDING');
+
+    // 3. Admin checks pending developers list
+    const pendingRes = await fetch(`${baseUrl}/api/admin/pending-developers`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.strictEqual(pendingRes.status, 200);
+    const pendingData = await pendingRes.json() as any;
+    const found = pendingData.pendingUsers.find((u: any) => u.id === newDevId);
+    assert.ok(found, 'Pending user must be listed in admin pending list');
+
+    // 4. Admin approves the developer
+    const approveRes = await fetch(`${baseUrl}/api/admin/users/${newDevId}/approve`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert.strictEqual(approveRes.status, 200);
+
+    // 5. Check /api/auth/me for the developer returns ACTIVE
+    const meRes = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { 'Authorization': `Bearer ${newDevToken}` }
+    });
+    assert.strictEqual(meRes.status, 200);
+    const meData = await meRes.json() as any;
+    assert.strictEqual(meData.user.status, 'ACTIVE');
+
+    // 6. Now log in to get a fresh token reflecting ACTIVE status
+    const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: testDevEmail, password: 'password123' })
+    });
+    assert.strictEqual(loginRes.status, 200);
+    const freshData = await loginRes.json() as any;
+    assert.strictEqual(freshData.user.status, 'ACTIVE');
+
+    // 7. Approved developer can now publish games
+    const publishSuccess = await fetch(`${baseUrl}/api/games`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${freshData.token}`
+      },
+      body: JSON.stringify({
+        title: 'Approved Developer Game',
+        description: 'Successfully approved game',
+        category: 'adventure',
+        canvas: { width: 400, height: 400, gridSize: 20 },
+        entities: [{ id: 'hero', name: 'Hero', type: 'player' }],
+        logic: { version: '1.0', blocks: [] }
+      })
+    });
+    assert.strictEqual(publishSuccess.status, 201);
+  });
 });

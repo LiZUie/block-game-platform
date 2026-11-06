@@ -7,7 +7,8 @@ import {
   Play, Square, UploadCloud, CheckCircle2, 
   Trash2, Plus, RefreshCw, Volume2, 
   MousePointer, Zap, Compass, Sparkles, 
-  Eye, EyeOff, Layers, Code, Flag, Settings2
+  Eye, EyeOff, Layers, Code, Flag, Settings2,
+  Clock, AlertCircle, ShieldCheck
 } from 'lucide-react';
 
 interface StudioViewProps {
@@ -27,7 +28,8 @@ interface ScratchBlockItem {
 }
 
 export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const [checkingStatus, setCheckingStatus] = useState(false);
 
   // Active Category on Left Palette
   const [activeCategory, setActiveCategory] = useState<BlockCategory>('events');
@@ -360,6 +362,92 @@ export const StudioView: React.FC<StudioViewProps> = ({ onGamePublished }) => {
       setIsPublishing(false);
     }
   };
+
+  if (user?.role === UserRole.DEVELOPER && user?.status === 'PENDING') {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border-2 border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center shadow-xl shadow-amber-500/10">
+          <Clock size={40} className="animate-spin" style={{ animationDuration: '6s' }} />
+        </div>
+        
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider font-mono">
+            Status Akun: Menunggu Approval (Pending)
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-white">
+            Akun Developer Anda Belum Disetujui
+          </h2>
+          <p className="text-sm text-slate-300 max-w-lg mx-auto leading-relaxed">
+            Halo <strong>{user.username}</strong>! Pendaftaran akun Developer Anda telah berhasil disimpan di Cloud Service. Namun, untuk menjaga keamanan dan standar platform game, akun Developer baru memerlukan <strong>persetujuan (approval) dari Cloud Admin</strong> sebelum dapat membuat dan mempublikasikan game.
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 max-w-md mx-auto text-left space-y-2 text-xs">
+          <div className="font-bold text-slate-200 flex items-center gap-2">
+            <ShieldCheck size={16} className="text-indigo-400" />
+            <span>Alur Verifikasi Cloud Service:</span>
+          </div>
+          <ol className="list-decimal list-inside space-y-1 text-slate-400 pl-1">
+            <li>Admin menerima permohonan Anda di portal <strong>Cloud Admin</strong>.</li>
+            <li>Admin memverifikasi dan menyetujui akun developer Anda.</li>
+            <li>Setelah disetujui, editor Scratch Studio otomatis aktif sepenuhnya!</li>
+          </ol>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+          <button
+            onClick={async () => {
+              setCheckingStatus(true);
+              const updated = await refreshUser();
+              setCheckingStatus(false);
+              if (updated?.status === 'ACTIVE') {
+                alert('Selamat! Akun Developer Anda telah disetujui Admin. Studio siap digunakan!');
+              } else {
+                alert('Status akun saat ini masih PENDING. Harap tunggu persetujuan Admin.');
+              }
+            }}
+            disabled={checkingStatus}
+            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-extrabold text-sm px-5 py-2.5 rounded-xl shadow-lg shadow-amber-500/20 transition-all"
+          >
+            <RefreshCw size={16} className={checkingStatus ? 'animate-spin' : ''} />
+            <span>{checkingStatus ? 'Memeriksa...' : 'Cek Status Persetujuan Sekarang'}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (user?.status === 'REJECTED') {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-20 h-20 rounded-3xl bg-rose-500/10 border-2 border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center">
+          <AlertCircle size={40} />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black text-white">Permohonan Developer Ditolak</h2>
+          <p className="text-sm text-slate-400 max-w-md mx-auto">
+            Halo <strong>{user?.username}</strong>, permohonan akun developer Anda saat ini ditolak oleh Administrator. Silakan hubungi admin atau gunakan akun Player untuk bermain.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (user?.role === UserRole.PLAYER) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-20 h-20 rounded-3xl bg-slate-800 border-2 border-slate-700 text-slate-400 mx-auto flex items-center justify-center">
+          <Code size={40} />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black text-white">Akses Studio Terkunci</h2>
+          <p className="text-sm text-slate-400 max-w-md mx-auto">
+            Halaman Scratch Studio khusus untuk akun <strong>Developer</strong> dan <strong>Admin</strong>. Anda saat ini login sebagai Player.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#E9EEF2] text-slate-800 font-sans select-none overflow-hidden">

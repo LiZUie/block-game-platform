@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db.js';
-import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/auth.js';
+import { authenticateToken, requireRole, requireActiveAccount, AuthenticatedRequest } from '../middleware/auth.js';
 import { UserRole, GameManifest, GameSummary } from '@blockgame/shared';
 
 const router = Router();
@@ -78,8 +78,8 @@ router.get('/:id/manifest', (req: Request, res: Response) => {
   }
 });
 
-// 3. Publish New Game (Only DEVELOPER & ADMIN)
-router.post('/', authenticateToken, requireRole(UserRole.DEVELOPER, UserRole.ADMIN), (req: AuthenticatedRequest, res: Response) => {
+// 3. Publish New Game (Only DEVELOPER & ADMIN that are ACTIVE)
+router.post('/', authenticateToken, requireRole(UserRole.DEVELOPER, UserRole.ADMIN), requireActiveAccount, (req: AuthenticatedRequest, res: Response) => {
   const { title, description, category, canvas, entities, logic, blocklyXml } = req.body;
   const user = req.user!;
 
@@ -117,8 +117,8 @@ router.post('/', authenticateToken, requireRole(UserRole.DEVELOPER, UserRole.ADM
   res.status(201).json({ message: 'Game berhasil dipublish ke Cloud Service!', gameId: id });
 });
 
-// 4. Update Game (Only Author or ADMIN)
-router.put('/:id', authenticateToken, requireRole(UserRole.DEVELOPER, UserRole.ADMIN), (req: AuthenticatedRequest, res: Response) => {
+// 4. Update Game (Only Author or ADMIN that are ACTIVE)
+router.put('/:id', authenticateToken, requireRole(UserRole.DEVELOPER, UserRole.ADMIN), requireActiveAccount, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const game = db.prepare('SELECT author_id FROM games WHERE id = ?').get(req.params.id) as any;
 

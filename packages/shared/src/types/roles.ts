@@ -4,11 +4,14 @@ export enum UserRole {
   PLAYER = 'PLAYER'
 }
 
+export type AccountStatus = 'ACTIVE' | 'PENDING' | 'REJECTED';
+
 export interface UserProfile {
   id: string;
   username: string;
   email: string;
   role: UserRole;
+  status?: AccountStatus;
   createdAt: string;
 }
 

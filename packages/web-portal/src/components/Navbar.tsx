@@ -11,14 +11,40 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
   const { user, switchQuickDemo, logout } = useAuth();
 
-  const getRoleBadge = (role?: UserRole) => {
+  const getRoleBadge = (role?: UserRole, status?: string) => {
     switch (role) {
       case UserRole.ADMIN:
-        return <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5"><ShieldCheck size={13} /> ADMIN (Cloud Owner)</span>;
+        return (
+          <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
+            <ShieldCheck size={13} /> ADMIN (Cloud Owner)
+          </span>
+        );
       case UserRole.DEVELOPER:
-        return <span className="bg-sky-500/20 text-sky-300 border border-sky-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5"><Code2 size={13} /> DEVELOPER (Game Maker)</span>;
+        if (status === 'PENDING') {
+          return (
+            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5" title="Akun Developer sedang menunggu persetujuan Admin">
+              <Code2 size={13} /> DEV (Pending Approval)
+            </span>
+          );
+        }
+        if (status === 'REJECTED') {
+          return (
+            <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5" title="Permohonan Akun Developer ditolak">
+              <Code2 size={13} /> DEV (Ditolak)
+            </span>
+          );
+        }
+        return (
+          <span className="bg-sky-500/20 text-sky-300 border border-sky-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
+            <Code2 size={13} /> DEVELOPER (Game Maker)
+          </span>
+        );
       default:
-        return <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5"><UserCheck size={13} /> PLAYER (Gamer)</span>;
+        return (
+          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
+            <UserCheck size={13} /> PLAYER (Gamer)
+          </span>
+        );
     }
   };
 
@@ -71,6 +97,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
             {user?.role === UserRole.PLAYER && (
               <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded font-mono">LOCKED</span>
             )}
+            {user?.role === UserRole.DEVELOPER && user?.status === 'PENDING' && (
+              <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-mono">PENDING</span>
+            )}
           </button>
 
           {/* Sisi 1: Cloud Service Admin (Hanya untuk Admin) */}
@@ -93,7 +122,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
         <div className="flex items-center gap-3">
           {user && (
             <div className="flex items-center gap-3">
-              {getRoleBadge(user.role)}
+              {getRoleBadge(user.role, user.status)}
               <span className="text-sm font-semibold text-slate-200 hidden sm:inline">{user.username}</span>
 
               {/* Tombol Logout */}

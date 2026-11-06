@@ -2,13 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { UserRole, UserProfile, GameSummary } from '@blockgame/shared';
-import { ShieldCheck, Server, Database, Users, Gamepad2, Trash2, Cpu, Activity, AlertTriangle, Sparkles, RefreshCw } from 'lucide-react';
+import { 
+  ShieldCheck, Server, Database, Users, Gamepad2, 
+  Trash2, Cpu, Activity, AlertTriangle, Sparkles, 
+  RefreshCw, Check, X, Clock, UserCheck, UserX 
+} from 'lucide-react';
 
 export const AdminView: React.FC = () => {
   const { user, switchQuickDemo } = useAuth();
   const [metrics, setMetrics] = useState<any>(null);
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [gamesList, setGamesList] = useState<GameSummary[]>([]);
+  const [pendingList, setPendingList] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -21,19 +26,51 @@ export const AdminView: React.FC = () => {
   const loadAdminData = async () => {
     try {
       setRefreshing(true);
-      const [metricsData, usersData, gamesData] = await Promise.all([
+      const [metricsData, usersData, gamesData, pendingData] = await Promise.all([
         api.getAdminMetrics(),
         api.getAdminUsers(),
-        api.getGames(false) // all games including unpublished
+        api.getGames(false), // all games including unpublished
+        api.getPendingDevelopers()
       ]);
       setMetrics(metricsData);
       setUsersList(usersData.users);
       setGamesList(gamesData.games);
+      setPendingList(pendingData.pendingUsers);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const handleApprove = async (userId: string, username: string) => {
+    try {
+      await api.approveDeveloper(userId);
+      alert(`Akun Developer "${username}" berhasil disetujui (ACTIVE)!`);
+      loadAdminData();
+    } catch (err: any) {
+      alert(err.message || 'Gagal menyetujui akun');
+    }
+  };
+
+  const handleReject = async (userId: string, username: string) => {
+    if (!window.confirm(`Yakin ingin menolak pendaftaran akun Developer "${username}"?`)) return;
+    try {
+      await api.rejectDeveloper(userId);
+      alert(`Akun Developer "${username}" ditolak (REJECTED).`);
+      loadAdminData();
+    } catch (err: any) {
+      alert(err.message || 'Gagal menolak akun');
+    }
+  };
+
+  const handleStatusChange = async (userId: string, newStatus: string) => {
+    try {
+      await api.updateUserStatus(userId, newStatus);
+      loadAdminData();
+    } catch (err: any) {
+      alert(err.message || 'Gagal mengubah status akun');
     }
   };
 
@@ -177,6 +214,95 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
 
+          {/* 1.5. Developer Approval Queue (Fitur Permohonan Akun Developer) */}
+          <div className="bg-slate-900/90 border border-amber-500/30 rounded-3xl p-6 space-y-4 shadow-xl shadow-amber-500/5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center">
+                  <Clock size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Permohonan Akun Developer (Approval Queue)</span>
+                    {pendingList.length > 0 ? (
+                      <span className="bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-full text-[11px] font-black font-mono animate-pulse">
+                        {pendingList.length} Menunggu Persetujuan
+                      </span>
+                    ) : (
+                      <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-mono">
+                        Clear
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Daftar pendaftar dengan peran Developer yang memerlukan approval Admin sebelum dapat mengakses Scratch Studio.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {pendingList.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800/80 text-center space-y-1.5">
+                <div className="w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center">
+                  <UserCheck size={18} />
+                </div>
+                <p className="text-xs text-slate-200 font-bold">Semua permohonan developer telah diproses!</p>
+                <p className="text-[11px] text-slate-500">Tidak ada pendaftar baru yang menunggu persetujuan saat ini.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950/80 text-slate-400 font-mono uppercase text-[10px] border-b border-slate-800">
+                    <tr>
+                      <th className="p-3">Username</th>
+                      <th className="p-3">Email</th>
+                      <th className="p-3">Waktu Pendaftaran</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 text-right">Tindakan Admin</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-medium">
+                    {pendingList.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="p-3 text-white font-bold flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                          {p.username}
+                        </td>
+                        <td className="p-3 text-slate-300 font-mono">{p.email}</td>
+                        <td className="p-3 text-slate-400 font-mono text-[11px]">
+                          {new Date(p.createdAt).toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3">
+                          <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold text-[10px] uppercase font-mono">
+                            PENDING
+                          </span>
+                        </td>
+                        <td className="p-3 text-right space-x-2">
+                          <button
+                            onClick={() => handleApprove(p.id, p.username)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all"
+                            title="Setujui permohonan akun developer ini"
+                          >
+                            <Check size={14} />
+                            <span>Setujui (Approve)</span>
+                          </button>
+                          <button
+                            onClick={() => handleReject(p.id, p.username)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-bold transition-all"
+                            title="Tolak permohonan akun developer ini"
+                          >
+                            <X size={14} />
+                            <span>Tolak (Reject)</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Cloud Games Management Table */}
           <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -246,8 +372,10 @@ export const AdminView: React.FC = () => {
                   <tr>
                     <th className="p-3">Username</th>
                     <th className="p-3">Email</th>
-                    <th className="p-3">Peran Saat Ini</th>
-                    <th className="p-3">Ubah Peran (Role)</th>
+                    <th className="p-3">Peran (Role)</th>
+                    <th className="p-3">Status Akun</th>
+                    <th className="p-3">Ubah Status</th>
+                    <th className="p-3">Ubah Peran</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-medium">
@@ -267,6 +395,30 @@ export const AdminView: React.FC = () => {
                         >
                           {u.role}
                         </span>
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase font-mono ${
+                            u.status === 'ACTIVE' || !u.status
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : u.status === 'PENDING'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          }`}
+                        >
+                          {u.status || 'ACTIVE'}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <select
+                          value={u.status || 'ACTIVE'}
+                          onChange={(e) => handleStatusChange(u.id, e.target.value)}
+                          className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="ACTIVE">ACTIVE (Disetujui)</option>
+                          <option value="PENDING">PENDING (Tertunda)</option>
+                          <option value="REJECTED">REJECTED (Ditolak)</option>
+                        </select>
                       </td>
                       <td className="p-3">
                         <select

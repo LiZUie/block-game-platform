@@ -211,6 +211,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   <option value={UserRole.DEVELOPER}>Developer (Pembuat Game)</option>
                   <option value={UserRole.PLAYER}>Player (Pemain Game)</option>
                 </select>
+                {regRole === UserRole.DEVELOPER ? (
+                  <p className="text-[11px] text-amber-400 mt-1.5 flex items-start gap-1">
+                    <span className="font-bold">ℹ️ Info:</span>
+                    <span>Pendaftaran akun Developer memerlukan persetujuan (approval) oleh Admin sebelum dapat merilis game.</span>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-emerald-400 mt-1.5 flex items-start gap-1">
+                    <span className="font-bold">✓ Info:</span>
+                    <span>Akun Player langsung aktif untuk memainkan seluruh game.</span>
+                  </p>
+                )}
               </div>
 
               <button

@@ -53,13 +53,21 @@ export const CatalogView: React.FC<CatalogViewProps> = ({ onPlayGame, onCreateNe
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {user?.role !== UserRole.PLAYER ? (
-              <button
-                onClick={onCreateNewGame}
-                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/30 transition-all text-sm"
-              >
-                <PlusCircle size={18} />
-                <span>Buat Game Baru (Studio)</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={onCreateNewGame}
+                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/30 transition-all text-sm"
+                >
+                  <PlusCircle size={18} />
+                  <span>Buat Game Baru (Studio)</span>
+                </button>
+                {user?.role === UserRole.DEVELOPER && user?.status === 'PENDING' && (
+                  <span className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5">
+                    <span>⚠️</span>
+                    <span>Status: Menunggu Persetujuan Admin</span>
+                  </span>
+                )}
+              </div>
             ) : (
               <div className="flex items-center gap-2 text-xs bg-slate-800/80 border border-slate-700/60 text-slate-300 px-4 py-2 rounded-xl">
                 <Users size={16} className="text-emerald-400" />

@@ -10,7 +10,7 @@ export interface AuthenticatedRequest extends Request {
 
 export function generateToken(user: UserProfile): string {
   return jwt.sign(
-    { id: user.id, username: user.username, email: user.email, role: user.role },
+    { id: user.id, username: user.username, email: user.email, role: user.role, status: user.status },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -48,4 +48,26 @@ export function requireRole(...allowedRoles: UserRole[]) {
 
     next();
   };
+}
+
+export function requireActiveAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Harus login terlebih dahulu' });
+  }
+
+  if (req.user.role === UserRole.DEVELOPER && req.user.status === 'PENDING') {
+    return res.status(403).json({
+      error: 'Akun Developer Anda masih menunggu persetujuan (approval) dari Cloud Admin.',
+      status: 'PENDING'
+    });
+  }
+
+  if (req.user.status === 'REJECTED') {
+    return res.status(403).json({
+      error: 'Akun Anda berstatus REJECTED. Silakan hubungi Cloud Admin.',
+      status: 'REJECTED'
+    });
+  }
+
+  next();
 }
