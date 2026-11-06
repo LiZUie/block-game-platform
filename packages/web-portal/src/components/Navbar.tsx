@@ -1,7 +1,8 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '@blockgame/shared';
-import { Gamepad2, Code2, ShieldCheck, UserCheck, LogOut, Sparkles } from 'lucide-react';
+import { Gamepad2, Code2, ShieldCheck } from 'lucide-react';
+import { ProfileDropdown } from './ProfileDropdown';
 
 interface NavbarProps {
   currentView: 'catalog' | 'studio' | 'admin' | 'play';
@@ -9,44 +10,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
-  const { user, switchQuickDemo, logout } = useAuth();
-
-  const getRoleBadge = (role?: UserRole, status?: string) => {
-    switch (role) {
-      case UserRole.ADMIN:
-        return (
-          <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
-            <ShieldCheck size={13} /> ADMIN (Cloud Owner)
-          </span>
-        );
-      case UserRole.DEVELOPER:
-        if (status === 'PENDING') {
-          return (
-            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5" title="Akun Developer sedang menunggu persetujuan Admin">
-              <Code2 size={13} /> DEV (Pending Approval)
-            </span>
-          );
-        }
-        if (status === 'REJECTED') {
-          return (
-            <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5" title="Permohonan Akun Developer ditolak">
-              <Code2 size={13} /> DEV (Ditolak)
-            </span>
-          );
-        }
-        return (
-          <span className="bg-sky-500/20 text-sky-300 border border-sky-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
-            <Code2 size={13} /> DEVELOPER (Game Maker)
-          </span>
-        );
-      default:
-        return (
-          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
-            <UserCheck size={13} /> PLAYER (Gamer)
-          </span>
-        );
-    }
-  };
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
@@ -112,24 +76,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
           )}
         </nav>
 
-        {/* User Info & Logout (Hapus Uji Role Switcher) */}
+        {/* User Profile Menu (Dropdown Profil & Logout) */}
         <div className="flex items-center gap-3">
-          {user && (
-            <div className="flex items-center gap-3">
-              {getRoleBadge(user.role, user.status)}
-              <span className="text-sm font-semibold text-slate-200 hidden sm:inline">{user.username}</span>
-
-              {/* Tombol Logout */}
-              <button
-                onClick={logout}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold transition-all shadow-sm"
-                title="Keluar dari akun (Logout)"
-              >
-                <LogOut size={14} />
-                <span>Logout</span>
-              </button>
-            </div>
-          )}
+          <ProfileDropdown />
         </div>
 
       </div>
