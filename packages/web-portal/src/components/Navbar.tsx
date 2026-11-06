@@ -114,11 +114,21 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
             </button>
           </div>
 
-          {/* Profile Badge */}
+          {/* Profile Badge & Logout */}
           {user && (
-            <div className="flex items-center gap-2 pl-2">
+            <div className="flex items-center gap-3 pl-2">
               {getRoleBadge(user.role)}
               <span className="text-sm font-semibold text-slate-200 hidden sm:inline">{user.username}</span>
+
+              {/* Tombol Logout */}
+              <button
+                onClick={logout}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold transition-all shadow-sm"
+                title="Keluar dari akun (Logout)"
+              >
+                <LogOut size={13} />
+                <span>Logout</span>
+              </button>
             </div>
           )}
         </div>

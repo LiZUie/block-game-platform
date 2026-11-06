@@ -9,11 +9,11 @@ function getAuthHeader(): Record<string, string> {
 
 export const api = {
   // Auth
-  async login(email: string, password: string): Promise<{ token: string; user: UserProfile }> {
+  async login(usernameOrEmail: string, password: string): Promise<{ token: string; user: UserProfile }> {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ username: usernameOrEmail, email: usernameOrEmail, password })
     });
     if (!res.ok) {
       const err = await res.json();

@@ -6,19 +6,20 @@ import { UserRole, UserProfile } from '@blockgame/shared';
 
 const router = Router();
 
-// Login
+// Login (Mendukung Login via Username ATAU Email)
 router.post('/login', (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { username, email, password } = req.body;
+  const loginIdentifier = username || email;
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email dan password wajib diisi' });
+  if (!loginIdentifier || !password) {
+    return res.status(400).json({ error: 'Username/Email dan password wajib diisi' });
   }
 
-  const stmt = db.prepare('SELECT * FROM users WHERE email = ?');
-  const user = stmt.get(email) as any;
+  const stmt = db.prepare('SELECT * FROM users WHERE email = ? OR username = ?');
+  const user = stmt.get(loginIdentifier, loginIdentifier) as any;
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Email atau password salah' });
+    return res.status(401).json({ error: 'Username/Email atau password salah' });
   }
 
   const profile: UserProfile = {

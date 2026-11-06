@@ -21,6 +21,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ gameId, onBackToCatalog 
 
   const [score, setScore] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [isGameWon, setIsGameWon] = useState(false);
+  const [winMsg, setWinMsg] = useState('');
   const [finalScore, setFinalScore] = useState(0);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
@@ -63,9 +65,16 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ gameId, onBackToCatalog 
       setScore(newScore);
     };
 
-    runner.onGameOver = (endedScore) => {
+    runner.onGameOver = (endedScore, reason) => {
       setIsGameOver(true);
       setFinalScore(endedScore);
+      setScoreSubmitted(false);
+    };
+
+    runner.onGameWin = (endedScore, message) => {
+      setIsGameWon(true);
+      setFinalScore(endedScore);
+      setWinMsg(message);
       setScoreSubmitted(false);
     };
 
@@ -78,6 +87,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ gameId, onBackToCatalog 
 
   const handleRestart = () => {
     setIsGameOver(false);
+    setIsGameWon(false);
     setScore(0);
     setScoreSubmitted(false);
     if (runnerRef.current) {
@@ -167,15 +177,26 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ gameId, onBackToCatalog 
           <div className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-700/80 bg-slate-950">
             <canvas ref={canvasRef} className="block cursor-crosshair max-w-full h-auto" />
 
-            {/* Game Over Modal Overlay */}
-            {isGameOver && (
+            {/* Game Over / Win Modal Overlay */}
+            {(isGameOver || isGameWon) && (
               <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center space-y-4">
-                <div className="w-12 h-12 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center">
-                  <Trophy size={24} />
+                <div className={`w-14 h-14 rounded-full border flex items-center justify-center ${
+                  isGameWon 
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' 
+                    : 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                }`}>
+                  <Trophy size={28} />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black text-white">Permainan Selesai!</h3>
-                  <p className="text-sm text-slate-300 mt-1">Skor yang Anda raih: <span className="font-mono text-emerald-400 font-bold text-lg">{finalScore}</span></p>
+                  <h3 className="text-2xl font-black text-white">
+                    {isGameWon ? '🏆 KAMU MENANG!' : 'Permainan Selesai!'}
+                  </h3>
+                  <p className="text-sm text-slate-300 mt-1">
+                    {isGameWon ? winMsg : 'Kamu menabrak rintangan atau jebakan!'}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1 font-mono">
+                    Total Skor: <span className="text-emerald-400 font-bold text-base">{finalScore}</span>
+                  </p>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">

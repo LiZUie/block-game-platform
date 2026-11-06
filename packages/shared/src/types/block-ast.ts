@@ -11,6 +11,9 @@ export type BlockNodeType =
   | 'GROW_TRAIL'
   | 'ADD_SCORE'
   | 'GAME_OVER'
+  | 'WIN_GAME'
+  | 'DESTROY_ENTITY'
+  | 'UNLOCK_DOOR'
   | 'PLAY_SOUND'
   // Control
   | 'IF_CONDITION'

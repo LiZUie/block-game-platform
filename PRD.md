@@ -48,23 +48,27 @@ Sistem dirancang fleksibel sehingga dapat berjalan secara **On-Premise / Private
 - **Cloud Leaderboard & Sesi**: Pencatatan riwayat skor permainan dan penayangan 10 rekor skor tertinggi (*Top 10 Global Leaderboard*).
 - **Admin Monitoring Panel**: Dasbor khusus admin untuk memantau penggunaan memori server, uptime sistem, total game, dan moderasi peran akun pengguna.
 
-### Sisi 2: Developer Studio (Pembuat Game Berbasis Blok 2D)
-- **Editor Kanvas 2D**: Pengaturan dimensi grid petak kanvas (misal: grid 20x20 untuk Snake), pemilihan warna bentuk geometris (ular hijau, apel merah), dan kecepatan gerak (*tick rate*).
-- **Visual Block Programming Engine**: Penyusunan logika permainan menggunakan blok visual berwarna:
-  - *Blok Event*: `Ketika Game Mulai`, `Setiap Game Tick (ms)`, `Ketika Menabrak Apel`, `Ketika Tombol Panah Ditekan`.
-  - *Blok Action*: `Gerakkan Maju Searah Gerak`, `Ubah Arah (Atas/Bawah/Kiri/Kanan)`, `Spawn Apel di Koordinat Acak`, `Tambah Skor +10`, `Perpanjang Ekor Ular +1`, `Mainkan Audio Beep`, `Game Over`.
+### Sisi 2: Developer Studio (Pembuat Game Berbasis Blok 2D Multi-Genre)
+- **Pilihan Template Game Multi-Genre**:
+  - 🏹 **2D Dungeon Adventure**: Pahlawan menjelajah labirin, mengumpulkan batu permata, mencari kunci emas, menghindari jebakan duri, dan membuka portal keluar untuk menang.
+  - 🧩 **2D Maze Puzzle**: Karakter teka-teki labirin mengaktifkan tombol saklar target untuk membuka jalan keluar.
+  - 🐍 **Classic Arcade (Snake)**: Ular memakan apel merah dan bertambah panjang.
+- **Entitas Dinamis**: Dukungan berbagai objek (*Hero, Key, Door, Gem, Obstacle Wall, Hazard*).
+- **Universal Block Logic**: Blok logika kondisi menang (*Win Condition*), kalah (*Game Over*), ambil item (*Destroy Entity*), gerak 4-arah, dan buka pintu.
 - **In-Studio Playtest Simulator**: Kanvas simulator lokal untuk menguji coba game secara langsung di dalam studio dengan keyboard sebelum dipublish.
 - **One-Click Cloud Publish**: Tombol sekali klik untuk mengompilasi susunan blok menjadi manifest JSON dan mengunggahnya langsung ke Cloud Service.
 
 ### Sisi 3: Player Game Client (Mesin Eksekusi Pemain)
 - **Web Canvas Runner Ringan (< 65 KB)**: Engine rendering HTML5 Canvas 2D ultra-cepat yang mengunduh manifest game dari cloud dan mengeksekusinya tanpa instalasi plugin apa pun.
 - **Universal Input Handler**: Kontrol keyboard (Tombol Panah / WASD) untuk pengguna komputer desktop, serta tombol Virtual D-Pad di layar sentuh untuk pengguna smartphone/tablet.
-- **Game Over & Submit Skor**: Layar akhir game otomatis dengan skor akhir dan tombol pengiriman skor instan ke cloud.
+- **Game Over & Layar Menang (Win Condition)**: Layar akhir game otomatis dengan skor akhir dan tombol pengiriman skor instan ke cloud.
 
-### Kontrol Akses 3 Peran (RBAC)
-- **Admin**: Akses penuh ke Cloud Admin Panel, Studio, dan Game Player.
-- **Developer**: Akses membuat/mengedit game di Studio dan memainkan seluruh game.
-- **Player**: Hanya diizinkan menjelajah katalog dan memainkan game (akses ke Studio diblokir otomatis).
+### Gerbang Login Awal & Kontrol Akses 3 Peran (RBAC)
+- **Layar Login Awal (Gateway Screen)**: Halaman pembuka layanan mewajibkan login via Username/Email dan Password. Sistem memverifikasi kredensial dan otomatis mengarahkan ke tampilan sesuai peran:
+  - **Admin**: Otomatis diarahkan ke **Dashboard Cloud Admin** (Monitoring memori/uptime server & database).
+  - **Developer**: Otomatis diarahkan ke **Developer Studio 2D** (Bisa merakit game & memainkannya).
+  - **Player**: Otomatis diarahkan ke **Katalog Game Arcade** (Hanya bisa bermain).
+- **Fitur Logout**: Tombol logout di navigasi atas untuk membersihkan token sesi dan mengembalikan pengguna ke Layar Login.
 
 ---
 

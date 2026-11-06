@@ -120,11 +120,267 @@ function seedInitialData() {
     console.log('[Cloud DB] Initial default users seeded (Admin, Developer, Player).');
   }
 
-  // Seed default 2D Game: Ular Makan Apel (Classic Snake)
-  const gameCount = (db.prepare('SELECT COUNT(*) as count FROM games').get() as any)?.count || 0;
-  if (gameCount === 0) {
+  // Seed initial 2D games
+  const hasSnake = db.prepare('SELECT id FROM games WHERE id = ?').get('game_snake_classic');
+  if (!hasSnake) {
     seedSnakeGame();
   }
+
+  const hasAdventure = db.prepare('SELECT id FROM games WHERE id = ?').get('game_adventure_dungeon');
+  if (!hasAdventure) {
+    seedAdventureGame();
+  }
+
+  const hasPuzzle = db.prepare('SELECT id FROM games WHERE id = ?').get('game_puzzle_maze');
+  if (!hasPuzzle) {
+    seedPuzzleGame();
+  }
+}
+
+function seedAdventureGame() {
+  const now = new Date().toISOString();
+  const canvasConfig = {
+    width: 400,
+    height: 400,
+    gridSize: 20,
+    backgroundColor: '#090d16',
+    tickRateMs: 0, // Turn-based / step-by-step
+    gameMode: 'adventure'
+  };
+
+  // Walls layout
+  const walls: any[] = [];
+  // Barrier 1
+  for (let y = 0; y < 280; y += 20) {
+    if (y !== 140) walls.push({ id: `wall_1_${y}`, name: 'Tembok', type: 'obstacle', shape: 'wall', color: '#334155', size: { width: 20, height: 20 }, initialPosition: { x: 140, y }, isSolid: true });
+  }
+  // Barrier 2
+  for (let y = 120; y < 400; y += 20) {
+    if (y !== 260) walls.push({ id: `wall_2_${y}`, name: 'Tembok', type: 'obstacle', shape: 'wall', color: '#334155', size: { width: 20, height: 20 }, initialPosition: { x: 260, y }, isSolid: true });
+  }
+
+  const entities = [
+    {
+      id: 'entity_hero',
+      name: 'Ksatria (Hero)',
+      type: 'player',
+      shape: 'square',
+      color: '#38BDF8', // Cyan
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 40, y: 40 },
+      isSolid: false
+    },
+    {
+      id: 'entity_key',
+      name: 'Kunci Gerbang',
+      type: 'key',
+      shape: 'diamond',
+      color: '#FACC15', // Gold
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 340, y: 40 },
+      isSolid: false
+    },
+    {
+      id: 'entity_door',
+      name: 'Pintu Portal Keluar',
+      type: 'door',
+      shape: 'door',
+      color: '#A855F7', // Purple Portal
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 340, y: 340 },
+      isSolid: false
+    },
+    {
+      id: 'entity_gem',
+      name: 'Batu Permata',
+      type: 'treasure',
+      shape: 'star',
+      color: '#34D399', // Emerald Gem
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 40, y: 340 },
+      isSolid: false
+    },
+    {
+      id: 'entity_trap',
+      name: 'Jebakan Duri',
+      type: 'hazard',
+      shape: 'square',
+      color: '#EF4444', // Red Danger
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 200, y: 140 },
+      isSolid: false
+    },
+    ...walls
+  ];
+
+  const logicAST = {
+    version: '1.0',
+    blocks: [
+      {
+        type: 'WHEN_GAME_START',
+        params: {},
+        children: [
+          { type: 'SET_VARIABLE', params: { name: 'score', value: 0 } },
+          { type: 'SET_VARIABLE', params: { name: 'hasKey', value: 0 } }
+        ]
+      },
+      {
+        type: 'ON_COLLISION',
+        params: { entityA: 'entity_hero', entityB: 'entity_key' },
+        children: [
+          { type: 'ADD_SCORE', params: { amount: 50 } },
+          { type: 'DESTROY_ENTITY', params: { entityId: 'entity_key' } },
+          { type: 'SET_VARIABLE', params: { name: 'hasKey', value: 1 } },
+          { type: 'PLAY_SOUND', params: { sound: 'key' } }
+        ]
+      },
+      {
+        type: 'ON_COLLISION',
+        params: { entityA: 'entity_hero', entityB: 'entity_gem' },
+        children: [
+          { type: 'ADD_SCORE', params: { amount: 100 } },
+          { type: 'DESTROY_ENTITY', params: { entityId: 'entity_gem' } },
+          { type: 'PLAY_SOUND', params: { sound: 'coin' } }
+        ]
+      },
+      {
+        type: 'ON_COLLISION',
+        params: { entityA: 'entity_hero', entityB: 'entity_trap' },
+        children: [
+          { type: 'GAME_OVER', params: { message: 'Terkena jebakan duri misterius!' } }
+        ]
+      },
+      {
+        type: 'ON_COLLISION',
+        params: { entityA: 'entity_hero', entityB: 'entity_door' },
+        children: [
+          {
+            type: 'IF_CONDITION',
+            params: { variable: 'hasKey', operator: '==', value: 1 },
+            children: [
+              { type: 'WIN_GAME', params: { message: 'Selamat! Kamu berhasil membuka portal keluar dan memenangkan petualangan!' } }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const insertGame = db.prepare(`
+    INSERT INTO games (
+      id, title, description, author_id, author_name, category,
+      canvas_json, entities_json, logic_json, blockly_xml,
+      is_published, play_count, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 18, ?, ?)
+  `);
+
+  insertGame.run(
+    'game_adventure_dungeon',
+    'Petualangan Kunci Labirin (2D Dungeon Quest)',
+    'Jelajahi labirin bawah tanah, kumpulkan batu permata, temukan kunci emas, hindari jebakan duri merah, dan buka portal keluar untuk menang!',
+    'user_dev_01',
+    'RetroCoder',
+    'adventure',
+    JSON.stringify(canvasConfig),
+    JSON.stringify(entities),
+    JSON.stringify(logicAST),
+    '',
+    1,
+    now,
+    now
+  );
+}
+
+function seedPuzzleGame() {
+  const now = new Date().toISOString();
+  const canvasConfig = {
+    width: 400,
+    height: 400,
+    gridSize: 20,
+    backgroundColor: '#1e1b4b', // deep indigo
+    tickRateMs: 0,
+    gameMode: 'puzzle'
+  };
+
+  const entities = [
+    {
+      id: 'entity_player',
+      name: 'Penjelajah Teka-Teki',
+      type: 'player',
+      shape: 'square',
+      color: '#A7F3D0',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 40, y: 40 },
+      isSolid: false
+    },
+    {
+      id: 'entity_switch',
+      name: 'Tombol Saklar Teka-Teki',
+      type: 'key',
+      shape: 'circle',
+      color: '#F43F5E',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 200, y: 180 },
+      isSolid: false
+    },
+    {
+      id: 'entity_goal',
+      name: 'Portal Selesai',
+      type: 'door',
+      shape: 'door',
+      color: '#60A5FA',
+      size: { width: 20, height: 20 },
+      initialPosition: { x: 360, y: 360 },
+      isSolid: false
+    }
+  ];
+
+  const logicAST = {
+    version: '1.0',
+    blocks: [
+      {
+        type: 'ON_COLLISION',
+        params: { entityA: 'entity_player', entityB: 'entity_switch' },
+        children: [
+          { type: 'ADD_SCORE', params: { amount: 50 } },
+          { type: 'DESTROY_ENTITY', params: { entityId: 'entity_switch' } },
+          { type: 'SET_VARIABLE', params: { name: 'unlocked', value: 1 } },
+          { type: 'PLAY_SOUND', params: { sound: 'key' } }
+        ]
+      },
+      {
+        type: 'ON_COLLISION',
+        params: { entityA: 'entity_player', entityB: 'entity_goal' },
+        children: [
+          { type: 'WIN_GAME', params: { message: 'Teka-teki labirin terpecahkan sempurna!' } }
+        ]
+      }
+    ]
+  };
+
+  const insertGame = db.prepare(`
+    INSERT INTO games (
+      id, title, description, author_id, author_name, category,
+      canvas_json, entities_json, logic_json, blockly_xml,
+      is_published, play_count, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 9, ?, ?)
+  `);
+
+  insertGame.run(
+    'game_puzzle_maze',
+    'Teka-Teki Saklar Ruang (2D Maze Puzzle)',
+    'Teka-teki labirin: aktifkan tombol saklar merah terlebih dahulu untuk membuka jalan menuju portal keluar.',
+    'user_dev_01',
+    'RetroCoder',
+    'puzzle',
+    JSON.stringify(canvasConfig),
+    JSON.stringify(entities),
+    JSON.stringify(logicAST),
+    '',
+    1,
+    now,
+    now
+  );
 }
 
 function seedSnakeGame() {

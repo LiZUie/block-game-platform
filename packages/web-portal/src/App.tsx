@@ -1,14 +1,31 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { UserRole, UserProfile } from '@blockgame/shared';
 import { Navbar } from './components/Navbar';
+import { LoginView } from './views/LoginView';
 import { CatalogView } from './views/CatalogView';
 import { PlayerView } from './views/PlayerView';
 import { StudioView } from './views/StudioView';
 import { AdminView } from './views/AdminView';
 
 const MainApp: React.FC = () => {
+  const { user, loading } = useAuth();
   const [currentView, setCurrentView] = useState<'catalog' | 'studio' | 'admin' | 'play'>('catalog');
-  const [activeGameId, setActiveGameId] = useState<string>('game_snake_classic');
+  const [activeGameId, setActiveGameId] = useState<string>('game_adventure_dungeon');
+
+  const handleLoginSuccess = (loggedInUser: UserProfile) => {
+    // Arahkan otomatis ke halaman sesuai peran:
+    // Admin -> Cloud Admin Dashboard
+    // Developer -> Developer Studio 2D
+    // Player -> Katalog Game Arcade
+    if (loggedInUser.role === UserRole.ADMIN) {
+      setCurrentView('admin');
+    } else if (loggedInUser.role === UserRole.DEVELOPER) {
+      setCurrentView('studio');
+    } else {
+      setCurrentView('catalog');
+    }
+  };
 
   const handlePlayGame = (gameId: string) => {
     setActiveGameId(gameId);
@@ -23,6 +40,19 @@ const MainApp: React.FC = () => {
     setActiveGameId(gameId);
     setCurrentView('play');
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-400 font-mono text-xs">
+        Memeriksa sesi login cloud...
+      </div>
+    );
+  }
+
+  // Jika belum login, tampilkan Layar Login Gerbang Awal
+  if (!user) {
+    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">

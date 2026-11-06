@@ -13,20 +13,24 @@ export class GameRunner {
   private manifest: GameManifest;
   private isRunning = false;
   private isGameOver = false;
+  private isGameWon = false;
+  private winMessage = '';
   private timerId: any = null;
 
   // Runtime State
   private score = 0;
+  private variables: Record<string, any> = {};
   private direction: Direction = 'RIGHT';
   private nextDirection: Direction = 'RIGHT';
-  private playerHead: Point = { x: 100, y: 100 };
+  private playerPos: Point = { x: 100, y: 100 };
   private playerTrail: Point[] = [];
   private trailLength = 3;
-  private foodPos: Point = { x: 240, y: 160 };
+  private runtimeEntities: (EntityConfig & { currentPos: Point; collected?: boolean })[] = [];
 
   // Callbacks
   public onScoreChange?: (score: number) => void;
-  public onGameOver?: (score: number) => void;
+  public onGameOver?: (score: number, reason: string) => void;
+  public onGameWin?: (score: number, message: string) => void;
 
   constructor(canvas: HTMLCanvasElement, manifest: GameManifest) {
     this.canvas = canvas;
@@ -48,43 +52,52 @@ export class GameRunner {
     this.stop();
     this.isRunning = true;
     this.isGameOver = false;
+    this.isGameWon = false;
+    this.winMessage = '';
     this.score = 0;
+    this.variables = { score: 0 };
     this.direction = 'RIGHT';
     this.nextDirection = 'RIGHT';
 
-    // Find initial player position from manifest entities
-    const playerEntity = this.manifest.entities.find(e => e.type === 'player');
-    const foodEntity = this.manifest.entities.find(e => e.type === 'food');
-
     const gridSize = this.manifest.canvas.gridSize || 20;
 
+    // Clone entities with current positions
+    this.runtimeEntities = this.manifest.entities.map(e => ({
+      ...e,
+      currentPos: { ...e.initialPosition },
+      collected: false
+    }));
+
+    // Find Player
+    const playerEntity = this.runtimeEntities.find(e => e.type === 'player');
     if (playerEntity) {
-      this.playerHead = { ...playerEntity.initialPosition };
+      this.playerPos = { ...playerEntity.currentPos };
     } else {
-      this.playerHead = { x: gridSize * 5, y: gridSize * 5 };
+      this.playerPos = { x: gridSize * 2, y: gridSize * 2 };
     }
 
-    if (foodEntity) {
-      this.foodPos = { ...foodEntity.initialPosition };
+    // Init initial trail for snake mode
+    const isSnake = this.isSnakeMode();
+    if (isSnake) {
+      this.trailLength = 3;
+      this.playerTrail = [
+        { x: this.playerPos.x - gridSize, y: this.playerPos.y },
+        { x: this.playerPos.x - (gridSize * 2), y: this.playerPos.y }
+      ];
     } else {
-      this.spawnRandomFood();
+      this.playerTrail = [];
     }
-
-    // Init initial trail
-    this.trailLength = 3;
-    this.playerTrail = [
-      { x: this.playerHead.x - gridSize, y: this.playerHead.y },
-      { x: this.playerHead.x - (gridSize * 2), y: this.playerHead.y }
-    ];
 
     if (this.onScoreChange) this.onScoreChange(this.score);
 
     // Run WHEN_GAME_START blocks
     this.evaluateEvent('WHEN_GAME_START');
 
-    // Start Game Loop
-    const tickRate = this.manifest.canvas.tickRateMs || 140;
-    this.timerId = setInterval(() => this.tick(), tickRate);
+    // Start Game Loop if tickRate > 0 (e.g. Snake), otherwise step-based
+    const tickRate = this.manifest.canvas.tickRateMs || 0;
+    if (tickRate > 0) {
+      this.timerId = setInterval(() => this.tick(), tickRate);
+    }
 
     this.render();
   }
@@ -97,20 +110,68 @@ export class GameRunner {
     }
   }
 
-  public setDirection(dir: Direction) {
-    if (this.isGameOver) return;
-    // Prevent 180-degree immediate reverse
-    if (this.direction === 'UP' && dir === 'DOWN') return;
-    if (this.direction === 'DOWN' && dir === 'UP') return;
-    if (this.direction === 'LEFT' && dir === 'RIGHT') return;
-    if (this.direction === 'RIGHT' && dir === 'LEFT') return;
+  private isSnakeMode(): boolean {
+    return this.manifest.canvas.gameMode === 'snake' || 
+           this.manifest.category === 'classic' ||
+           this.manifest.entities.some(e => e.id === 'entity_snake');
+  }
 
-    this.nextDirection = dir;
+  public setDirection(dir: Direction) {
+    if (this.isGameOver || this.isGameWon) return;
+
+    if (this.isSnakeMode()) {
+      // Prevent 180-degree immediate reverse in snake
+      if (this.direction === 'UP' && dir === 'DOWN') return;
+      if (this.direction === 'DOWN' && dir === 'UP') return;
+      if (this.direction === 'LEFT' && dir === 'RIGHT') return;
+      if (this.direction === 'RIGHT' && dir === 'LEFT') return;
+      this.nextDirection = dir;
+    } else {
+      // Adventure / Puzzle / Turn-based: Move player directly step-by-step
+      this.direction = dir;
+      this.stepMove(dir);
+    }
+  }
+
+  private stepMove(dir: Direction) {
+    if (!this.isRunning || this.isGameOver || this.isGameWon) return;
+    const gridSize = this.manifest.canvas.gridSize || 20;
+
+    let targetX = this.playerPos.x;
+    let targetY = this.playerPos.y;
+
+    if (dir === 'UP') targetY -= gridSize;
+    else if (dir === 'DOWN') targetY += gridSize;
+    else if (dir === 'LEFT') targetX -= gridSize;
+    else if (dir === 'RIGHT') targetX += gridSize;
+
+    // Check boundary
+    if (
+      targetX < 0 ||
+      targetY < 0 ||
+      targetX >= this.canvas.width ||
+      targetY >= this.canvas.height
+    ) {
+      return; // Can't walk off screen in adventure mode
+    }
+
+    // Check solid walls
+    const solidBlock = this.runtimeEntities.find(
+      e => !e.collected && e.isSolid && e.currentPos.x === targetX && e.currentPos.y === targetY
+    );
+    if (solidBlock) {
+      this.playBeep(180, 0.05); // Thud sound
+      return; // Blocked by wall
+    }
+
+    this.playerPos = { x: targetX, y: targetY };
+    this.checkCollisions();
+    this.render();
   }
 
   private bindKeyboard() {
     window.addEventListener('keydown', (e) => {
-      if (!this.isRunning || this.isGameOver) return;
+      if (!this.isRunning || this.isGameOver || this.isGameWon) return;
 
       switch (e.key) {
         case 'ArrowUp':
@@ -142,29 +203,30 @@ export class GameRunner {
   }
 
   private tick() {
-    if (!this.isRunning || this.isGameOver) return;
+    if (!this.isRunning || this.isGameOver || this.isGameWon) return;
+    if (!this.isSnakeMode()) return;
 
     this.direction = this.nextDirection;
     const gridSize = this.manifest.canvas.gridSize || 20;
 
     // Record previous head position into trail
-    this.playerTrail.unshift({ x: this.playerHead.x, y: this.playerHead.y });
+    this.playerTrail.unshift({ x: this.playerPos.x, y: this.playerPos.y });
     while (this.playerTrail.length > this.trailLength) {
       this.playerTrail.pop();
     }
 
     // Move Head
-    if (this.direction === 'UP') this.playerHead.y -= gridSize;
-    else if (this.direction === 'DOWN') this.playerHead.y += gridSize;
-    else if (this.direction === 'LEFT') this.playerHead.x -= gridSize;
-    else if (this.direction === 'RIGHT') this.playerHead.x += gridSize;
+    if (this.direction === 'UP') this.playerPos.y -= gridSize;
+    else if (this.direction === 'DOWN') this.playerPos.y += gridSize;
+    else if (this.direction === 'LEFT') this.playerPos.x -= gridSize;
+    else if (this.direction === 'RIGHT') this.playerPos.x += gridSize;
 
-    // Check Wall Collisions
+    // Check Wall Collisions in Snake
     if (
-      this.playerHead.x < 0 ||
-      this.playerHead.y < 0 ||
-      this.playerHead.x >= this.canvas.width ||
-      this.playerHead.y >= this.canvas.height
+      this.playerPos.x < 0 ||
+      this.playerPos.y < 0 ||
+      this.playerPos.x >= this.canvas.width ||
+      this.playerPos.y >= this.canvas.height
     ) {
       this.triggerGameOver('Menabrak dinding!');
       return;
@@ -172,30 +234,40 @@ export class GameRunner {
 
     // Check Self Collision
     for (const segment of this.playerTrail) {
-      if (segment.x === this.playerHead.x && segment.y === this.playerHead.y) {
+      if (segment.x === this.playerPos.x && segment.y === this.playerPos.y) {
         this.triggerGameOver('Menabrak tubuh sendiri!');
         return;
       }
     }
 
-    // Check Food Collision
-    const dist = Math.hypot(this.playerHead.x - this.foodPos.x, this.playerHead.y - this.foodPos.y);
-    if (dist < gridSize * 0.8) {
-      this.score += 10;
-      this.trailLength += 1;
-      this.playBeep(600, 0.08); // Retro Eat Sound
-      this.spawnRandomFood();
-
-      if (this.onScoreChange) this.onScoreChange(this.score);
-
-      // Trigger ON_COLLISION blocks from AST
-      this.evaluateEvent('ON_COLLISION');
-    }
-
+    this.checkCollisions();
     this.render();
   }
 
-  private spawnRandomFood() {
+  private checkCollisions() {
+    const gridSize = this.manifest.canvas.gridSize || 20;
+
+    for (const entity of this.runtimeEntities) {
+      if (entity.collected || entity.type === 'player' || entity.isSolid) continue;
+
+      const dist = Math.hypot(
+        this.playerPos.x - entity.currentPos.x,
+        this.playerPos.y - entity.currentPos.y
+      );
+
+      if (dist < gridSize * 0.8) {
+        // Evaluate collision logic for this pair
+        this.evaluateCollision('entity_snake', entity.id);
+        this.evaluateCollision('entity_hero', entity.id);
+        this.evaluateCollision('entity_player', entity.id);
+      }
+    }
+  }
+
+  private spawnRandom(entityId: string) {
+    const target = this.runtimeEntities.find(e => e.id === entityId);
+    if (!target) return;
+
     const gridSize = this.manifest.canvas.gridSize || 20;
     const maxCols = Math.floor(this.canvas.width / gridSize);
     const maxRows = Math.floor(this.canvas.height / gridSize);
@@ -207,37 +279,41 @@ export class GameRunner {
     while (collides) {
       newX = Math.floor(Math.random() * maxCols) * gridSize;
       newY = Math.floor(Math.random() * maxRows) * gridSize;
-      collides = (newX === this.playerHead.x && newY === this.playerHead.y) ||
-        this.playerTrail.some(s => s.x === newX && s.y === newY);
+      collides = (newX === this.playerPos.x && newY === this.playerPos.y) ||
+        this.playerTrail.some(s => s.x === newX && s.y === newY) ||
+        this.runtimeEntities.some(e => !e.collected && e.isSolid && e.currentPos.x === newX && e.currentPos.y === newY);
     }
 
-    this.foodPos = { x: newX, y: newY };
+    target.currentPos = { x: newX, y: newY };
   }
 
   private triggerGameOver(reason: string) {
     this.isGameOver = true;
     this.stop();
     this.playBeep(220, 0.3); // Low buzz sound
-
-    // Final render with game over tint
     this.render();
+    if (this.onGameOver) this.onGameOver(this.score, reason);
+  }
 
-    if (this.onGameOver) {
-      this.onGameOver(this.score);
-    }
+  private triggerWinGame(message: string) {
+    this.isGameWon = true;
+    this.winMessage = message || 'Selamat! Kamu memenangkan permainan!';
+    this.stop();
+    this.playFanfare();
+    this.render();
+    if (this.onGameWin) this.onGameWin(this.score, this.winMessage);
   }
 
   private render() {
     const { width, height, backgroundColor, gridSize } = this.manifest.canvas;
-    const playerEntity = this.manifest.entities.find(e => e.type === 'player');
-    const foodEntity = this.manifest.entities.find(e => e.type === 'food');
+    const isSnake = this.isSnakeMode();
 
     // 1. Clear & Background
-    this.ctx.fillStyle = backgroundColor || '#111827';
+    this.ctx.fillStyle = backgroundColor || '#0f172a';
     this.ctx.fillRect(0, 0, width, height);
 
-    // 2. Draw Subtle Grid Lines
-    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    // 2. Draw Subtle Grid
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     this.ctx.lineWidth = 1;
     for (let x = 0; x <= width; x += gridSize) {
       this.ctx.beginPath();
@@ -252,70 +328,135 @@ export class GameRunner {
       this.ctx.stroke();
     }
 
-    // 3. Draw Food (Apel)
-    const foodColor = foodEntity?.color || '#EF4444';
-    this.ctx.fillStyle = foodColor;
-    this.ctx.beginPath();
-    this.ctx.arc(
-      this.foodPos.x + gridSize / 2,
-      this.foodPos.y + gridSize / 2,
-      gridSize / 2 - 2,
-      0,
-      Math.PI * 2
-    );
-    this.ctx.fill();
+    // 3. Draw Entities (Keys, Gems, Doors, Walls, Food)
+    for (const entity of this.runtimeEntities) {
+      if (entity.collected || entity.type === 'player') continue;
+      const { x, y } = entity.currentPos;
+      this.ctx.fillStyle = entity.color || '#FACC15';
 
-    // 4. Draw Snake Trail / Body
-    const playerColor = playerEntity?.color || '#10B981';
-    this.ctx.fillStyle = playerColor;
-    for (let i = 0; i < this.playerTrail.length; i++) {
-      const seg = this.playerTrail[i];
-      const opacity = Math.max(0.4, 1 - (i / this.playerTrail.length) * 0.5);
-      this.ctx.globalAlpha = opacity;
-      this.ctx.fillRect(seg.x + 1, seg.y + 1, gridSize - 2, gridSize - 2);
+      if (entity.shape === 'circle' || entity.type === 'food') {
+        this.ctx.beginPath();
+        this.ctx.arc(x + gridSize / 2, y + gridSize / 2, gridSize / 2 - 2, 0, Math.PI * 2);
+        this.ctx.fill();
+      } else if (entity.shape === 'diamond' || entity.type === 'key') {
+        // Diamond Key
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + gridSize / 2, y + 2);
+        this.ctx.lineTo(x + gridSize - 2, y + gridSize / 2);
+        this.ctx.lineTo(x + gridSize / 2, y + gridSize - 2);
+        this.ctx.lineTo(x + 2, y + gridSize / 2);
+        this.ctx.closePath();
+        this.ctx.fill();
+      } else if (entity.shape === 'star' || entity.type === 'treasure') {
+        // Star Gem
+        this.ctx.beginPath();
+        this.ctx.arc(x + gridSize / 2, y + gridSize / 2, gridSize / 2 - 3, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillRect(x + gridSize / 2 - 2, y + gridSize / 2 - 2, 4, 4);
+      } else if (entity.shape === 'door' || entity.type === 'door') {
+        // Portal Door
+        this.ctx.fillRect(x + 2, y + 2, gridSize - 4, gridSize - 4);
+        this.ctx.fillStyle = '#F3E8FF';
+        this.ctx.fillRect(x + 5, y + 5, gridSize - 10, gridSize - 10);
+      } else if (entity.shape === 'wall' || entity.isSolid) {
+        // Solid Wall
+        this.ctx.fillStyle = entity.color || '#334155';
+        this.ctx.fillRect(x, y, gridSize, gridSize);
+        this.ctx.strokeStyle = '#475569';
+        this.ctx.strokeRect(x + 1, y + 1, gridSize - 2, gridSize - 2);
+      } else {
+        // Standard Square
+        this.ctx.fillRect(x + 1, y + 1, gridSize - 2, gridSize - 2);
+      }
     }
-    this.ctx.globalAlpha = 1.0;
 
-    // 5. Draw Snake Head
-    this.ctx.fillStyle = '#34D399'; // slightly brighter green for head
-    this.ctx.fillRect(this.playerHead.x + 1, this.playerHead.y + 1, gridSize - 2, gridSize - 2);
+    // 4. Draw Snake Trail if snake mode
+    if (isSnake && this.playerTrail.length > 0) {
+      this.ctx.fillStyle = '#10B981';
+      for (let i = 0; i < this.playerTrail.length; i++) {
+        const seg = this.playerTrail[i];
+        const opacity = Math.max(0.4, 1 - (i / this.playerTrail.length) * 0.5);
+        this.ctx.globalAlpha = opacity;
+        this.ctx.fillRect(seg.x + 1, seg.y + 1, gridSize - 2, gridSize - 2);
+      }
+      this.ctx.globalAlpha = 1.0;
+    }
 
-    // Draw little retro eye dots on head based on direction
+    // 5. Draw Player Character
+    const playerEntity = this.runtimeEntities.find(e => e.type === 'player');
+    this.ctx.fillStyle = playerEntity?.color || (isSnake ? '#34D399' : '#38BDF8');
+    this.ctx.fillRect(this.playerPos.x + 1, this.playerPos.y + 1, gridSize - 2, gridSize - 2);
+
+    // Player Eyes
     this.ctx.fillStyle = '#064E3B';
     const eyeSize = 3;
     if (this.direction === 'RIGHT') {
-      this.ctx.fillRect(this.playerHead.x + gridSize - 6, this.playerHead.y + 4, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerHead.x + gridSize - 6, this.playerHead.y + gridSize - 7, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + gridSize - 6, this.playerPos.y + 4, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + gridSize - 6, this.playerPos.y + gridSize - 7, eyeSize, eyeSize);
     } else if (this.direction === 'LEFT') {
-      this.ctx.fillRect(this.playerHead.x + 3, this.playerHead.y + 4, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerHead.x + 3, this.playerHead.y + gridSize - 7, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + 3, this.playerPos.y + 4, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + 3, this.playerPos.y + gridSize - 7, eyeSize, eyeSize);
     } else if (this.direction === 'UP') {
-      this.ctx.fillRect(this.playerHead.x + 4, this.playerHead.y + 3, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerHead.x + gridSize - 7, this.playerHead.y + 3, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + 4, this.playerPos.y + 3, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + gridSize - 7, this.playerPos.y + 3, eyeSize, eyeSize);
     } else {
-      this.ctx.fillRect(this.playerHead.x + 4, this.playerHead.y + gridSize - 6, eyeSize, eyeSize);
-      this.ctx.fillRect(this.playerHead.x + gridSize - 7, this.playerHead.y + gridSize - 6, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + 4, this.playerPos.y + gridSize - 6, eyeSize, eyeSize);
+      this.ctx.fillRect(this.playerPos.x + gridSize - 7, this.playerPos.y + gridSize - 6, eyeSize, eyeSize);
     }
 
-    // 6. Draw Game Over Overlay if ended
+    // 6. Win Overlay
+    if (this.isGameWon) {
+      this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      this.ctx.fillRect(0, 0, width, height);
+
+      this.ctx.fillStyle = '#34D399';
+      this.ctx.font = 'bold 24px "JetBrains Mono", monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText('🏆 KAMU MENANG!', width / 2, height / 2 - 15);
+
+      this.ctx.fillStyle = '#F3F4F6';
+      this.ctx.font = '14px "Plus Jakarta Sans", sans-serif';
+      this.ctx.fillText(this.winMessage, width / 2, height / 2 + 15);
+      this.ctx.fillText(`Total Skor: ${this.score}`, width / 2, height / 2 + 38);
+    }
+
+    // 7. Game Over Overlay
     if (this.isGameOver) {
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+      this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
       this.ctx.fillRect(0, 0, width, height);
 
       this.ctx.fillStyle = '#EF4444';
-      this.ctx.font = 'bold 28px "JetBrains Mono", monospace';
+      this.ctx.font = 'bold 26px "JetBrains Mono", monospace';
       this.ctx.textAlign = 'center';
       this.ctx.fillText('GAME OVER', width / 2, height / 2 - 15);
 
       this.ctx.fillStyle = '#F3F4F6';
-      this.ctx.font = '16px "Plus Jakarta Sans", sans-serif';
+      this.ctx.font = '14px "Plus Jakarta Sans", sans-serif';
       this.ctx.fillText(`Skor Akhir: ${this.score}`, width / 2, height / 2 + 20);
     }
   }
 
   private evaluateEvent(eventType: string) {
-    if (!this.manifest.logic || !this.manifest.logic.blocks) return;
+    if (!this.manifest.logic?.blocks) return;
     const blocks = this.manifest.logic.blocks.filter(b => b.type === eventType);
+    for (const b of blocks) {
+      if (b.children) {
+        for (const child of b.children) {
+          this.executeAction(child);
+        }
+      }
+    }
+  }
+
+  private evaluateCollision(entityA: string, entityB: string) {
+    if (!this.manifest.logic?.blocks) return;
+    const blocks = this.manifest.logic.blocks.filter(
+      b => b.type === 'ON_COLLISION' && 
+      ((b.params.entityA === entityA && b.params.entityB === entityB) ||
+       (b.params.entityA === entityB && b.params.entityB === entityA))
+    );
+
     for (const b of blocks) {
       if (b.children) {
         for (const child of b.children) {
@@ -329,16 +470,52 @@ export class GameRunner {
     switch (node.type) {
       case 'ADD_SCORE':
         this.score += node.params.amount || 10;
+        this.variables.score = this.score;
         if (this.onScoreChange) this.onScoreChange(this.score);
         break;
+
       case 'GROW_TRAIL':
         this.trailLength += node.params.amount || 1;
         break;
+
       case 'SPAWN_RANDOM':
-        this.spawnRandomFood();
+        this.spawnRandom(node.params.entityId || 'entity_apple');
         break;
+
+      case 'DESTROY_ENTITY': {
+        const ent = this.runtimeEntities.find(e => e.id === node.params.entityId);
+        if (ent) ent.collected = true;
+        break;
+      }
+
+      case 'SET_VARIABLE':
+        this.variables[node.params.name] = node.params.value;
+        break;
+
+      case 'IF_CONDITION': {
+        const val = this.variables[node.params.variable];
+        let conditionMet = false;
+        if (node.params.operator === '==' && val == node.params.value) conditionMet = true;
+        if (node.params.operator === '>' && val > node.params.value) conditionMet = true;
+
+        if (conditionMet && node.children) {
+          for (const c of node.children) this.executeAction(c);
+        }
+        break;
+      }
+
+      case 'WIN_GAME':
+        this.triggerWinGame(node.params.message || 'Level Berhasil Diselesaikan!');
+        break;
+
       case 'GAME_OVER':
-        this.triggerGameOver('Blok Game Over terpicu');
+        this.triggerGameOver(node.params.message || 'Game Over');
+        break;
+
+      case 'PLAY_SOUND':
+        if (node.params.sound === 'key') this.playBeep(700, 0.1);
+        else if (node.params.sound === 'coin') this.playBeep(880, 0.12);
+        else this.playBeep(600, 0.08);
         break;
     }
   }
@@ -361,8 +538,14 @@ export class GameRunner {
       osc.start();
       osc.stop(ctx.currentTime + duration);
     } catch {
-      // Audio might be blocked until user gesture, ignore safely
+      // Audio gesture protected
     }
+  }
+
+  private playFanfare() {
+    this.playBeep(523, 0.1);
+    setTimeout(() => this.playBeep(659, 0.1), 100);
+    setTimeout(() => this.playBeep(784, 0.25), 200);
   }
 
   public destroy() {

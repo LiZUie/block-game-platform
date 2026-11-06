@@ -6,10 +6,10 @@ interface AuthContextType {
   user: UserProfile | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
-  register: (username: string, email: string, pass: string, role: UserRole) => Promise<void>;
+  login: (usernameOrEmail: string, pass: string) => Promise<UserProfile>;
+  register: (username: string, email: string, pass: string, role: UserRole) => Promise<UserProfile>;
   logout: () => void;
-  switchQuickDemo: (role: UserRole) => Promise<void>;
+  switchQuickDemo: (role: UserRole) => Promise<UserProfile>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,27 +28,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch {
           logout();
         }
-      } else {
-        // Otomatis login demo sebagai DEVELOPER jika baru pertama kali buka
-        await switchQuickDemo(UserRole.DEVELOPER);
       }
       setLoading(false);
     }
     loadUser();
   }, []);
 
-  const login = async (email: string, pass: string) => {
-    const res = await api.login(email, pass);
+  const login = async (usernameOrEmail: string, pass: string): Promise<UserProfile> => {
+    const res = await api.login(usernameOrEmail, pass);
     localStorage.setItem('blockgame_token', res.token);
     setToken(res.token);
     setUser(res.user);
+    return res.user;
   };
 
-  const register = async (username: string, email: string, pass: string, role: UserRole) => {
+  const register = async (username: string, email: string, pass: string, role: UserRole): Promise<UserProfile> => {
     const res = await api.register(username, email, pass, role);
     localStorage.setItem('blockgame_token', res.token);
     setToken(res.token);
     setUser(res.user);
+    return res.user;
   };
 
   const logout = () => {
@@ -57,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const switchQuickDemo = async (role: UserRole) => {
+  const switchQuickDemo = async (role: UserRole): Promise<UserProfile> => {
     let email = 'dev@blockgame.cloud';
     let pass = 'dev123';
 
@@ -69,14 +68,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       pass = 'player123';
     }
 
-    try {
-      const res = await api.login(email, pass);
-      localStorage.setItem('blockgame_token', res.token);
-      setToken(res.token);
-      setUser(res.user);
-    } catch (err) {
-      console.error('Gagal switch demo user:', err);
-    }
+    const res = await api.login(email, pass);
+    localStorage.setItem('blockgame_token', res.token);
+    setToken(res.token);
+    setUser(res.user);
+    return res.user;
   };
 
   return (
