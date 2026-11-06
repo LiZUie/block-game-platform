@@ -1,0 +1,18 @@
+{
+  "name": "block-game-platform",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"CLOUD-API,WEB-PORTAL\" -c \"blue,emerald\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev --workspace=@blockgame/cloud-service",
+    "dev:frontend": "npm run dev --workspace=@blockgame/web-portal",
+    "build": "npm run build --workspace=@blockgame/shared && npm run build --workspace=@blockgame/web-portal",
+    "test": "npm run test --workspace=@blockgame/cloud-service"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
