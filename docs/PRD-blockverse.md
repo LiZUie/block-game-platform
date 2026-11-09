@@ -2,18 +2,6 @@
 
 ## Platform Pembuatan & Distribusi Game 2D Cloud Berbasis Visual Block Programming & Coroutine Runtime
 
-> **Catatan nama produk:** Nama produk resmi adalah **BlockVerse (2D Cloud Game Platform)**. Seluruh identifier teknis monorepo menggunakan scope `@blockgame/*` (`@blockgame/shared`, `@blockgame/cloud-service`, `@blockgame/web-portal`), sehingga penamaan terstruktur rapi dan konsisten di seluruh package npm.
-
-| Atribut | Nilai |
-|---|---|
-| Versi dokumen | **2.0-rc (menuju freeze prd-v1.0)** |
-| Tanggal | 9 November 2026 |
-| Status | Release Candidate, Production Ready |
-| Pemilik dokumen | Product & Tech Lead (LiZUie) |
-| Tim | Full-Stack Cloud & Web Engineering Team |
-| Draft sebelumnya | [archive/PRD-blockverse-v1-draft.md](archive/PRD-blockverse-v1-draft.md) |
-
-> **Aturan isi PRD:** PRD ini hanya berisi hal yang stabil, yaitu *apa* yang dibangun dan *kenapa*. Detail yang mudah berubah (skema payload JSON, konfigurasi port, implementasi fungsi runtime, dan tabel database SQLite) didefinisikan secara deklaratif di packages kode monorepo (`packages/shared`, `packages/cloud-service`, `packages/web-portal`). Dengan begitu PRD tetap konsisten dan tidak usang saat detail kodingan berkembang.
 
 ---
 
