@@ -315,7 +315,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     const token = localStorage.getItem('token');
 
     try {
-      const response = await fetch('http://localhost:3001/api/games', {
+      const response = await fetch('/api/games', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

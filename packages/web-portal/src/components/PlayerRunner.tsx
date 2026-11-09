@@ -29,7 +29,7 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
   // Ambil project dari Cloud (atau Local Cache jika baru disimpan dari Studio)
   useEffect(() => {
     if (gameId && gameId !== '1') {
-      fetch(`http://localhost:3001/api/games/${gameId}/manifest`)
+      fetch(`/api/games/${gameId}/manifest`)
         .then((res) => res.json())
         .then((data) => {
           if (data.projectData) {
@@ -47,7 +47,7 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
     }
 
     // Ambil Live Leaderboard dari Cloud SQLite
-    fetch(`http://localhost:3001/api/games/${gameId}/scores`)
+    fetch(`/api/games/${gameId}/scores`)
       .then((res) => res.json())
       .then((data) => {
         if (data.leaderboard && data.leaderboard.length > 0) {
@@ -60,7 +60,7 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
   const submitScoreToCloud = async (scoreValue: number) => {
     const token = localStorage.getItem('token');
     try {
-      await fetch(`http://localhost:3001/api/games/${gameId}/scores`, {
+      await fetch(`/api/games/${gameId}/scores`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
