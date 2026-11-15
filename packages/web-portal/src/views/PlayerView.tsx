@@ -130,8 +130,17 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ gameId, onBackToCatalog 
     );
   }
 
-  // Jika game memiliki manifest projectData Blockly atau ID '1' Space Invaders, jalankan BlockVerse PlayerRunner 60 FPS
-  if ((manifest as any)?.projectData || gameId === '1') {
+  // Jika game memiliki manifest projectData Blockly atau ID '1' Space Invaders / Preset Baru, jalankan BlockVerse PlayerRunner 60 FPS
+  if (
+    (manifest as any)?.projectData ||
+    gameId === '1' ||
+    gameId.startsWith('game_flappy') ||
+    gameId.startsWith('game_pong') ||
+    gameId.startsWith('game_tetris') ||
+    gameId.startsWith('game_cat') ||
+    gameId.startsWith('game_coin') ||
+    gameId.startsWith('game_space')
+  ) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-4 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">

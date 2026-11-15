@@ -4,8 +4,14 @@ import { Flag, Octagon, Trophy, Gamepad2, Send } from 'lucide-react';
 import {
   BlockVerseProject,
   BlockVerseRuntime,
+  COIN_HUNTER_PRESET,
+  FLAPPY_BIRD_PRESET,
+  PONG_ARCADE_PRESET,
   SPACE_INVADERS_PRESET,
+  STAR_CATCHER_GAME,
+  TETRIS_DROP_PRESET,
 } from '../engine/BlockVerseEngine';
+import { api } from '../services/api';
 
 interface LeaderboardEntry {
   username: string;
@@ -13,68 +19,75 @@ interface LeaderboardEntry {
   createdAt: string;
 }
 
-export const PlayerRunner: React.FC<{ gameId?: string }> = ({
+export const PlayerRunner: React.FC<{ gameId?: string; initialProject?: BlockVerseProject }> = ({
   gameId = '1',
+  initialProject,
 }) => {
-  const [project, setProject] = useState<BlockVerseProject>(SPACE_INVADERS_PRESET);
+  const [project, setProject] = useState<BlockVerseProject>(initialProject || STAR_CATCHER_GAME);
   const [liveScore, setLiveScore] = useState<number>(0);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([
-    { username: 'Arsa_Dev', score: 180, createdAt: 'Just now' },
-    { username: 'CyberPlayer99', score: 120, createdAt: '5m ago' },
+    { username: 'Arsa_Dev', score: 240, createdAt: 'Just now' },
+    { username: 'CyberPlayer99', score: 150, createdAt: '5m ago' },
   ]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const runtimeRef = useRef<BlockVerseRuntime | null>(null);
 
-  // Ambil project dari Cloud (atau Local Cache jika baru disimpan dari Studio)
   useEffect(() => {
-    if (gameId && gameId !== '1') {
-      fetch(`/api/games/${gameId}/manifest`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.projectData) {
-            setProject(data.projectData);
+    if (initialProject) {
+      setProject(initialProject);
+      return;
+    }
+
+    // Cek apabila gameId merujuk pada salah satu Preset Bawaan
+    if (gameId === 'game_flappy_bird') {
+      setProject(FLAPPY_BIRD_PRESET);
+    } else if (gameId === 'game_pong_arcade') {
+      setProject(PONG_ARCADE_PRESET);
+    } else if (gameId === 'game_tetris_drop') {
+      setProject(TETRIS_DROP_PRESET);
+    } else if (gameId === 'game_cat_star') {
+      setProject(STAR_CATCHER_GAME);
+    } else if (gameId === 'game_coin_hunter') {
+      setProject(COIN_HUNTER_PRESET);
+    } else if (gameId === 'game_space_invaders' || gameId === '1') {
+      setProject(SPACE_INVADERS_PRESET);
+    } else {
+      // Ambil manifest game buatan developer dari Cloud SQLite / Local Storage
+      api
+        .getGameManifest(gameId)
+        .then((manifest) => {
+          if (manifest.projectData) {
+            setProject(manifest.projectData);
           }
         })
         .catch(() => {});
-    } else {
-      const cached = localStorage.getItem('blockverse_latest_project');
-      if (cached) {
-        try {
-          setProject(JSON.parse(cached));
-        } catch {}
-      }
     }
 
-    // Ambil Live Leaderboard dari Cloud SQLite
-    fetch(`/api/games/${gameId}/scores`)
-      .then((res) => res.json())
+    api
+      .getLeaderboard(gameId)
       .then((data) => {
         if (data.leaderboard && data.leaderboard.length > 0) {
           setLeaderboard(data.leaderboard);
         }
       })
       .catch(() => {});
-  }, [gameId]);
+  }, [gameId, initialProject]);
 
   const submitScoreToCloud = async (scoreValue: number) => {
-    const token = localStorage.getItem('token');
     try {
-      await fetch(`/api/games/${gameId}/scores`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ score: scoreValue }),
-      });
+      await api.submitScore(gameId, scoreValue);
+      const updated = await api.getLeaderboard(gameId);
+      if (updated.leaderboard && updated.leaderboard.length > 0) {
+        setLeaderboard(updated.leaderboard);
+        return;
+      }
     } catch {}
 
     setLeaderboard((prev) =>
-      [
-        ...prev,
-        { username: 'You', score: scoreValue, createdAt: 'Just now' },
-      ].sort((a, b) => b.score - a.score)
+      [...prev, { username: 'You', score: scoreValue, createdAt: 'Just now' }].sort(
+        (a, b) => b.score - a.score
+      )
     );
   };
 
@@ -87,7 +100,7 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
       (vars) => setLiveScore(Number(vars.score || 0))
     );
     runtimeRef.current = runtime;
-    runtime.renderFrame();
+    runtime.start(); // Langsung jalankan game ketika dibuka oleh Player
 
     return () => runtime.destroy();
   }, [project]);
@@ -95,7 +108,6 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 flex flex-col items-center">
       <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Kiri: Layar Game HTML5 Canvas */}
         <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -108,7 +120,7 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
                 onClick={() => runtimeRef.current?.start()}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition"
               >
-                <Flag className="w-4 h-4 fill-white" /> Play
+                <Flag className="w-4 h-4 fill-white" /> Play / Restart
               </button>
               <button
                 onClick={() => runtimeRef.current?.stop()}
@@ -129,7 +141,7 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
           </div>
 
           <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-            <span>Controls: Left/Right Arrow to Move • Space to Shoot</span>
+            <span>Kontrol: Panah Kiri/Kanan/Atas/Bawah • Spasi untuk Aksi/Terbang</span>
             <button
               onClick={() => submitScoreToCloud(liveScore)}
               className="bg-[#FF8C1A] hover:bg-[#e67e17] text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5"
@@ -139,7 +151,6 @@ export const PlayerRunner: React.FC<{ gameId?: string }> = ({
           </div>
         </div>
 
-        {/* Kanan: Cloud Leaderboard */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col">
           <div className="flex items-center gap-2 text-amber-400 font-bold text-base mb-4">
             <Trophy className="w-5 h-5" />

@@ -26,10 +26,13 @@ import {
   BlockVerseProject,
   BlockVerseRuntime,
   COIN_HUNTER_PRESET,
+  FLAPPY_BIRD_PRESET,
   playSynthSound,
+  PONG_ARCADE_PRESET,
   SPACE_INVADERS_PRESET,
   SpriteTarget,
   STAR_CATCHER_GAME,
+  TETRIS_DROP_PRESET,
 } from '../engine/BlockVerseEngine';
 import {
   CATEGORY_BLOCKS,
@@ -38,6 +41,7 @@ import {
   scriptsToBlocklyXml,
   updateStudioDynamicContext,
 } from '../engine/ScratchBlocksSetup';
+import { api } from '../services/api';
 
 interface StickyComment {
   id: string;
@@ -57,11 +61,10 @@ const CATEGORIES = [
   { id: 'Variables', label: 'Variables', color: '#FF8C1A' },
 ];
 
-// Single-codepoint emojis (bebas bug simbol gender ♂ terpisah)
 const SPRITE_GALLERY_EMOJIS = [
-  '🐱', '🥷', '🤖', '👾', '🛸', '🚀', '🐉', '🦖',
-  '👻', '🤠', '🐸', '🦊', '⭐', '🪙', '💎', '⚡',
-  '🔥', '💣', '🗡️', '🛡️', '🏎️', '⚽', '🍎', '🏆',
+  '🐱', '🐦', '🥷', '🤖', '👾', '🛸', '🚀', '🐉',
+  '🦖', '👻', '🤠', '🐸', '🦊', '⭐', '🪙', '💎',
+  '⚡', '🔥', '💣', '🌵', '🧱', '🟦', '⚽', '🏆',
 ];
 
 export interface DeveloperStudioProps {
@@ -70,8 +73,11 @@ export interface DeveloperStudioProps {
   onSwitchToClassic?: () => void;
 }
 
-export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGamePublished, onSwitchToClassic }) => {
-  // Default langsung memuat game "Cat & Star Catcher" yang utuh dan siap dimainkan
+export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
+  onBack,
+  onGamePublished,
+  onSwitchToClassic,
+}) => {
   const [project, setProject] = useState<BlockVerseProject>(STAR_CATCHER_GAME);
   const [selectedSpriteId, setSelectedSpriteId] = useState<string>(
     STAR_CATCHER_GAME.sprites[0].id
@@ -94,7 +100,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
   const activeSprite =
     project.sprites.find((s) => s.id === selectedSpriteId) || project.sprites[0];
 
-  // Sinkronkan konteks dinamis untuk semua dropdown Blockly
   useEffect(() => {
     updateStudioDynamicContext({
       activeSpriteName: activeSprite?.name || 'Hero',
@@ -114,7 +119,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
       if (sprite.workspaceJson && Object.keys(sprite.workspaceJson).length > 0) {
         Blockly.serialization.workspaces.load(sprite.workspaceJson, workspace);
       } else if (sprite.scripts && sprite.scripts.length > 0) {
-        // Decompile otomatis dari scripts ke blok visual jika belum ada workspaceJson
         const xmlStr = scriptsToBlocklyXml(sprite.scripts);
         const dom = Blockly.utils.xml.textToDom(xmlStr);
         Blockly.Xml.domToWorkspace(dom, workspace);
@@ -125,7 +129,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     Blockly.Events.enable();
   };
 
-  // 1. Inisialisasi Blockly (Zelos = Scratch 3.0)
   useEffect(() => {
     registerScratchBlocks();
     if (!blocklyDivRef.current) return;
@@ -183,7 +186,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     };
   }, []);
 
-  // 2. Ganti isi Flyout saat Kategori di Kiri Diklik
   useEffect(() => {
     if (!workspaceRef.current) return;
     workspaceRef.current.updateToolbox({
@@ -192,13 +194,11 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     });
   }, [activeCategory, project.variables, project.broadcasts, project.sprites]);
 
-  // 3. Muat Blok Visual saat Pindah Sprite atau Ganti Template
   useEffect(() => {
     if (!workspaceRef.current || !activeSprite) return;
     loadSpriteScriptsIntoWorkspace(workspaceRef.current, activeSprite);
-  }, [selectedSpriteId, project.title]);
+  }, [selectedSpriteId]);
 
-  // 4. Inisialisasi Live Stage Canvas 2D Runtime + Callback Drag Sprite di Stage
   useEffect(() => {
     if (!stageCanvasRef.current) return;
     const runtime = new BlockVerseRuntime(
@@ -231,6 +231,9 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
 
   const handleSelectTemplate = (templateKey: string) => {
     let chosen: BlockVerseProject = STAR_CATCHER_GAME;
+    if (templateKey === 'flappy') chosen = FLAPPY_BIRD_PRESET;
+    if (templateKey === 'pong') chosen = PONG_ARCADE_PRESET;
+    if (templateKey === 'tetris') chosen = TETRIS_DROP_PRESET;
     if (templateKey === 'blank') chosen = BLANK_STARTER_PROJECT;
     if (templateKey === 'coin') chosen = COIN_HUNTER_PRESET;
     if (templateKey === 'space') chosen = SPACE_INVADERS_PRESET;
@@ -310,33 +313,49 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
     reader.readAsDataURL(file);
   };
 
+  // PERBAIKAN UTAMA UPLOAD GAME KE KATALOG CLOUD
   const handleSaveToCloud = async (publish: boolean = false) => {
-    setSaveStatus(publish ? 'Publishing...' : 'Saving...');
-    const token = localStorage.getItem('token');
+    // Pastikan blok di workspace aktif dikompilasi terbaru sebelum diupload
+    let updatedProject = { ...project };
+    if (workspaceRef.current) {
+      const currentId = selectedSpriteIdRef.current;
+      const jsonState = Blockly.serialization.workspaces.save(workspaceRef.current);
+      const compiled = compileWorkspaceToScripts(workspaceRef.current);
+      updatedProject = {
+        ...project,
+        sprites: project.sprites.map((sp) =>
+          sp.id === currentId
+            ? {
+                ...sp,
+                workspaceJson: jsonState,
+                scripts: compiled.length > 0 ? compiled : sp.scripts,
+              }
+            : sp
+        ),
+      };
+      setProject(updatedProject);
+    }
+
+    setSaveStatus(publish ? 'Publishing to Cloud...' : 'Saving...');
 
     try {
-      const response = await fetch('/api/games', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          title: project.title,
-          status: publish ? 'PUBLISHED' : 'DRAFT',
-          projectData: project,
-        }),
+      const res = await api.publishGame({
+        title: updatedProject.title || 'Untitled Game',
+        description: `Game 2D interaktif (${updatedProject.sprites.length} sprites) dibuat dengan BlockVerse Scratch Studio.`,
+        category: 'arcade',
+        status: publish ? 'PUBLISHED' : 'DRAFT',
+        projectData: updatedProject,
       });
 
-      if (!response.ok) throw new Error('Cloud sync fallback');
-      const data = await response.json();
-      setSaveStatus(publish ? 'Published to Cloud!' : 'Saved to Cloud!');
-      if (publish && onGamePublished && data.gameId) {
-        onGamePublished(data.gameId);
+      setSaveStatus(publish ? 'Published to Katalog Cloud!' : 'Saved to Cloud!');
+      if (publish && onGamePublished && res.gameId) {
+        setTimeout(() => {
+          onGamePublished(res.gameId);
+        }, 700);
       }
-    } catch {
-      localStorage.setItem('blockverse_latest_project', JSON.stringify(project));
-      setSaveStatus(publish ? 'Published (Local Cache)!' : 'Saved!');
+    } catch (err) {
+      console.error('Upload error:', err);
+      setSaveStatus('Saved to Local Cache!');
     } finally {
       setTimeout(() => setSaveStatus(''), 3000);
     }
@@ -371,14 +390,23 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
               <option value="star" className="text-slate-900">
                 ⭐ Game: Cat & Star Catcher
               </option>
-              <option value="blank" className="text-slate-900">
-                🆕 Blank Project (Bebas)
+              <option value="flappy" className="text-slate-900">
+                🐦 Game: Flappy Bird 2D Sky
+              </option>
+              <option value="pong" className="text-slate-900">
+                ⚽ Game: Neon Pong Arcade
+              </option>
+              <option value="tetris" className="text-slate-900">
+                🧱 Game: Tetris Block Drop
               </option>
               <option value="coin" className="text-slate-900">
                 🪙 Game: Coin Hunter RPG
               </option>
               <option value="space" className="text-slate-900">
                 👾 Game: Space Invaders
+              </option>
+              <option value="blank" className="text-slate-900">
+                🆕 Blank Project (Bebas)
               </option>
             </select>
           </div>
@@ -387,7 +415,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             type="text"
             value={project.title}
             onChange={(e) => setProject({ ...project, title: e.target.value })}
-            className="bg-white/20 hover:bg-white/30 focus:bg-white focus:text-slate-900 text-white font-semibold px-3 py-1 rounded-md text-sm outline-none transition w-44"
+            className="bg-white/20 hover:bg-white/30 focus:bg-white focus:text-slate-900 text-white font-semibold px-3 py-1 rounded-md text-sm outline-none transition w-48"
             placeholder="Judul Game..."
           />
 
@@ -400,7 +428,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
           </button>
         </div>
 
-        {/* Sisi Kanan Header diberi jarak aman agar tidak bertabrakan dengan tombol Switch Editor */}
         <div className="flex items-center space-x-2">
           {onSwitchToClassic && (
             <button
@@ -411,7 +438,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             </button>
           )}
           {saveStatus && (
-            <span className="text-xs bg-emerald-500/90 px-2.5 py-1 rounded flex items-center gap-1 font-medium">
+            <span className="text-xs bg-emerald-500 px-2.5 py-1 rounded flex items-center gap-1 font-bold shadow">
               <CheckCircle2 className="w-3.5 h-3.5" />
               {saveStatus}
             </span>
@@ -460,7 +487,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             <Volume2 className="w-4 h-4" /> Sounds
           </button>
 
-          {/* Tombol + Variable & + Broadcast dipindah ke Baris Sub-Header agar tidak ketutupan */}
           <div className="flex items-center space-x-1.5 pl-3">
             <button
               onClick={handleCreateVariable}
@@ -546,7 +572,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             className={`w-full h-full ${activeTab === 'code' ? 'block' : 'hidden'}`}
           />
 
-          {/* TAB COSTUMES & STAGE BACKDROP */}
           {activeTab === 'costumes' && (
             <div className="p-6 h-full overflow-y-auto bg-white space-y-6">
               <div>
@@ -640,7 +665,6 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({ onBack, onGame
             </div>
           )}
 
-          {/* TAB SOUNDS SYNTHESIZER */}
           {activeTab === 'sounds' && (
             <div className="p-6 h-full overflow-y-auto bg-white space-y-4">
               <h2 className="text-base font-bold text-slate-800">

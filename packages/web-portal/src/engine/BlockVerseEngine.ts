@@ -44,16 +44,20 @@ export interface RuntimeEntity extends SpriteTarget {
   sayExpireTime?: number;
 }
 
+interface StackFrame {
+  ops: CompiledOp[];
+  pc: number;
+  loopType?: 'FOREVER' | 'REPEAT';
+  remaining?: number;
+}
+
 interface ThreadProcess {
   id: string;
   entity: RuntimeEntity;
-  ops: CompiledOp[];
-  pc: number;
+  stack: StackFrame[];
   waitUntilTime: number;
-  loopStack: { pcStart: number; remaining?: number }[];
 }
 
-// Web Audio Synthesizer bawaan tanpa perlu file MP3 eksternal
 export function playSynthSound(type: string) {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -175,7 +179,6 @@ export class BlockVerseRuntime {
   };
 
   private handleMouseDown = () => {
-    // Cari sprite teratas yang diklik di Stage untuk fitur Drag-and-Drop
     for (let i = this.entities.length - 1; i >= 0; i--) {
       const ent = this.entities[i];
       if (!ent.visible || ent.isClone) continue;
@@ -205,6 +208,10 @@ export class BlockVerseRuntime {
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
     const key = e.key === ' ' ? 'space' : e.key.toLowerCase();
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'space'].includes(key) && this.isRunning) {
+      e.preventDefault();
+    }
+
     const wasPressed = this.pressedKeys.has(key);
     this.pressedKeys.add(key);
 
@@ -271,10 +278,8 @@ export class BlockVerseRuntime {
     this.threads.push({
       id: Math.random().toString(36).substring(2, 9),
       entity,
-      ops,
-      pc: 0,
+      stack: [{ ops: JSON.parse(JSON.stringify(ops)), pc: 0 }],
       waitUntilTime: 0,
-      loopStack: [],
     });
   }
 
@@ -337,11 +342,11 @@ export class BlockVerseRuntime {
           const r = (entity.size / 100) * 22;
           return Math.hypot(entity.x - this.mousePos.x, entity.y - this.mousePos.y) < r;
         }
-        const r1 = (entity.size / 100) * 20;
+        const r1 = (entity.size / 100) * 22;
         return this.entities.some((other) => {
           if (other === entity || !other.visible) return false;
           if (other.name !== targetName && other.parentId !== targetName) return false;
-          const r2 = (other.size / 100) * 20;
+          const r2 = (other.size / 100) * 22;
           return Math.hypot(entity.x - other.x, entity.y - other.y) < r1 + r2;
         });
       }
@@ -367,33 +372,29 @@ export class BlockVerseRuntime {
       let steps = 0;
       let yielded = false;
 
-      while (steps < 35 && !yielded) {
+      while (steps < 40 && !yielded && thread.stack.length > 0) {
         steps++;
+        const frame = thread.stack[thread.stack.length - 1];
 
-        if (thread.pc >= thread.ops.length) {
-          if (thread.loopStack.length > 0) {
-            const topLoop = thread.loopStack[thread.loopStack.length - 1];
-            if (topLoop.remaining === undefined) {
-              thread.pc = topLoop.pcStart;
-              yielded = true;
-              break;
-            } else if (topLoop.remaining > 1) {
-              topLoop.remaining--;
-              thread.pc = topLoop.pcStart;
-              yielded = true;
-              break;
-            } else {
-              thread.loopStack.pop();
-              continue;
-            }
-          } else {
+        if (frame.pc >= frame.ops.length) {
+          if (frame.loopType === 'FOREVER') {
+            frame.pc = 0;
+            yielded = true;
             break;
+          } else if (frame.loopType === 'REPEAT' && frame.remaining && frame.remaining > 1) {
+            frame.remaining--;
+            frame.pc = 0;
+            yielded = true;
+            break;
+          } else {
+            thread.stack.pop();
+            continue;
           }
         }
 
-        const op = thread.ops[thread.pc];
-        thread.pc++;
-        if (!op) break;
+        const op = frame.ops[frame.pc];
+        frame.pc++;
+        if (!op) continue;
 
         switch (op.op) {
           case 'MOVE_STEPS': {
@@ -439,11 +440,11 @@ export class BlockVerseRuntime {
             this.clampPosition(thread.entity);
             break;
           case 'IF_ON_EDGE_BOUNCE':
-            if (thread.entity.x > 225 || thread.entity.x < -225) {
+            if (thread.entity.x >= 225 || thread.entity.x <= -225) {
               thread.entity.direction = -thread.entity.direction;
               this.clampPosition(thread.entity);
             }
-            if (thread.entity.y > 165 || thread.entity.y < -165) {
+            if (thread.entity.y >= 165 || thread.entity.y <= -165) {
               thread.entity.direction = 180 - thread.entity.direction;
               this.clampPosition(thread.entity);
             }
@@ -497,28 +498,37 @@ export class BlockVerseRuntime {
           case 'REPEAT': {
             const count = Math.floor(Number(this.evaluateValue(op.times, thread.entity)));
             if (count > 0 && op.substack?.length > 0) {
-              const subCopy = JSON.parse(JSON.stringify(op.substack));
-              thread.ops.splice(thread.pc, 0, ...subCopy);
-              thread.loopStack.push({ pcStart: thread.pc, remaining: count });
-              op.op = 'NOOP_LOOP_HEADER';
+              thread.stack.push({
+                ops: JSON.parse(JSON.stringify(op.substack)),
+                pc: 0,
+                loopType: 'REPEAT',
+                remaining: count,
+              });
             }
             break;
           }
           case 'FOREVER': {
             if (op.substack?.length > 0) {
-              const subCopy = JSON.parse(JSON.stringify(op.substack));
-              thread.ops.splice(thread.pc, 0, ...subCopy);
-              thread.loopStack.push({ pcStart: thread.pc });
-              op.op = 'NOOP_LOOP_HEADER';
+              thread.stack.push({
+                ops: JSON.parse(JSON.stringify(op.substack)),
+                pc: 0,
+                loopType: 'FOREVER',
+              });
             }
             break;
           }
           case 'IF': {
             const cond = Boolean(this.evaluateValue(op.condition, thread.entity));
             if (cond && op.substack?.length > 0) {
-              this.spawnThread(thread.entity, JSON.parse(JSON.stringify(op.substack)));
+              thread.stack.push({
+                ops: JSON.parse(JSON.stringify(op.substack)),
+                pc: 0,
+              });
             } else if (!cond && op.elseSubstack?.length > 0) {
-              this.spawnThread(thread.entity, JSON.parse(JSON.stringify(op.elseSubstack)));
+              thread.stack.push({
+                ops: JSON.parse(JSON.stringify(op.elseSubstack)),
+                pc: 0,
+              });
             }
             break;
           }
@@ -569,10 +579,7 @@ export class BlockVerseRuntime {
         }
       }
 
-      if (
-        this.entities.includes(thread.entity) &&
-        (thread.pc < thread.ops.length || thread.loopStack.length > 0 || now < thread.waitUntilTime)
-      ) {
+      if (this.entities.includes(thread.entity) && (thread.stack.length > 0 || now < thread.waitUntilTime)) {
         activeThreads.push(thread);
       }
     }
@@ -719,15 +726,15 @@ export class BlockVerseRuntime {
 }
 
 // ============================================================================
-// 1. GAME LENGKAP SIAP DIMAINKAN: CAT & STAR CATCHER (Hero + Star + Bomb)
+// KOLEKSI 7 PRESET GAME SIAP DIMAINKAN & DIEDIT BLOKNYA
 // ============================================================================
+
+// 1. CAT & STAR CATCHER
 export const STAR_CATCHER_GAME: BlockVerseProject = {
   title: 'Cat & Star Catcher',
   stageBackdrop: '#e0f2fe',
   stagePattern: 'sky',
-  variables: {
-    score: 0,
-  },
+  variables: { score: 0 },
   broadcasts: ['game over', 'win'],
   sprites: [
     {
@@ -750,16 +757,8 @@ export const STAR_CATCHER_GAME: BlockVerseProject = {
             {
               op: 'FOREVER',
               substack: [
-                {
-                  op: 'IF',
-                  condition: { type: 'KEY_PRESSED', key: 'arrowright' },
-                  substack: [{ op: 'CHANGE_X', dx: 8 }],
-                },
-                {
-                  op: 'IF',
-                  condition: { type: 'KEY_PRESSED', key: 'arrowleft' },
-                  substack: [{ op: 'CHANGE_X', dx: -8 }],
-                },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 8 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -8 }] },
               ],
             },
           ],
@@ -806,9 +805,7 @@ export const STAR_CATCHER_GAME: BlockVerseProject = {
                 {
                   op: 'IF',
                   condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -165 },
-                  substack: [
-                    { op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 },
-                  ],
+                  substack: [{ op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 }],
                 },
               ],
             },
@@ -846,8 +843,235 @@ export const STAR_CATCHER_GAME: BlockVerseProject = {
                 {
                   op: 'IF',
                   condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -165 },
+                  substack: [{ op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// 2. FLAPPY BIRD 2D SKY (BARU)
+export const FLAPPY_BIRD_PRESET: BlockVerseProject = {
+  title: 'Flappy Bird 2D Sky',
+  stageBackdrop: '#e0f2fe',
+  stagePattern: 'sky',
+  variables: { score: 0 },
+  broadcasts: ['game over'],
+  sprites: [
+    {
+      id: 'sprite_bird',
+      name: 'Flappy',
+      x: -100,
+      y: 20,
+      size: 105,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🐦',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'GOTO_XY', x: -100, y: 20 },
+            { op: 'SAY', text: 'Tekan SPASI untuk Terbang!', seconds: 1.5 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'CHANGE_Y', dy: -3.5 },
+                {
+                  op: 'IF',
+                  condition: { type: 'KEY_PRESSED', key: 'space' },
                   substack: [
-                    { op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 },
+                    { op: 'PLAY_SOUND', sound: 'jump' },
+                    { op: 'CHANGE_Y', dy: 11 },
+                  ],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -155 },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'hit' },
+                    { op: 'BROADCAST', message: 'game over' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          trigger: 'WHEN_RECEIVE',
+          param: 'game over',
+          ops: [
+            { op: 'SAY', text: 'Menabrak! Game Over!', seconds: 2 },
+            { op: 'SUBMIT_SCORE', score: { type: 'VAR', name: 'score' } },
+            { op: 'STOP_ALL' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'sprite_pipe',
+      name: 'Pipa',
+      x: 200,
+      y: -60,
+      size: 130,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🌵',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'GOTO_XY', x: 200, y: -60 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'CHANGE_X', dx: -6 },
+                {
+                  op: 'IF',
+                  condition: { type: 'TOUCHING', target: 'Flappy' },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'hit' },
+                    { op: 'BROADCAST', message: 'game over' },
+                  ],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'X_POS' }, b: -220 },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'coin' },
+                    { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
+                    { op: 'GOTO_XY', x: 220, y: { type: 'RANDOM', min: -120, max: 110 } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'sprite_cloud_star',
+      name: 'BonusRing',
+      x: 120,
+      y: 60,
+      size: 95,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🪙',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'GOTO_XY', x: 120, y: 60 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'CHANGE_X', dx: -5 },
+                {
+                  op: 'IF',
+                  condition: { type: 'TOUCHING', target: 'Flappy' },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'coin' },
+                    { op: 'CHANGE_VAR', varName: 'score', delta: 25 },
+                    { op: 'GOTO_XY', x: 225, y: { type: 'RANDOM', min: -90, max: 120 } },
+                  ],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'X_POS' }, b: -220 },
+                  substack: [{ op: 'GOTO_XY', x: 225, y: { type: 'RANDOM', min: -90, max: 120 } }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// 3. NEON PONG ARCADE (BARU)
+export const PONG_ARCADE_PRESET: BlockVerseProject = {
+  title: 'Neon Pong Arcade',
+  stageBackdrop: '#05070d',
+  stagePattern: 'stars',
+  variables: { score: 0 },
+  broadcasts: ['game over'],
+  sprites: [
+    {
+      id: 'sprite_paddle',
+      name: 'Paddle',
+      x: 0,
+      y: -135,
+      size: 130,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🛸',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'GOTO_XY', x: 0, y: -135 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 10 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -10 }] },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'sprite_ball',
+      name: 'Ball',
+      x: 0,
+      y: 40,
+      size: 95,
+      direction: 45,
+      visible: true,
+      rotationStyle: 'all-around',
+      costumeEmoji: '⚽',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'GOTO_XY', x: 0, y: 40 },
+            { op: 'POINT_DIRECTION', direction: 45 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'MOVE_STEPS', steps: 7 },
+                { op: 'IF_ON_EDGE_BOUNCE' },
+                {
+                  op: 'IF',
+                  condition: { type: 'TOUCHING', target: 'Paddle' },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'jump' },
+                    { op: 'CHANGE_VAR', varName: 'score', delta: 15 },
+                    { op: 'POINT_DIRECTION', direction: { type: 'RANDOM', min: -60, max: 60 } },
+                    { op: 'CHANGE_Y', dy: 12 },
+                  ],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -162 },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'hit' },
+                    { op: 'SAY', text: 'Bola Jatuh! Game Over!', seconds: 2 },
+                    { op: 'SUBMIT_SCORE', score: { type: 'VAR', name: 'score' } },
+                    { op: 'STOP_ALL' },
                   ],
                 },
               ],
@@ -859,14 +1083,101 @@ export const STAR_CATCHER_GAME: BlockVerseProject = {
   ],
 };
 
-// 2. BLANK PROJECT (Kanvas Bersih)
+// 4. TETRIS BLOCK DROP (BARU)
+export const TETRIS_DROP_PRESET: BlockVerseProject = {
+  title: 'Tetris Block Drop',
+  stageBackdrop: '#1e1b4b',
+  stagePattern: 'grid',
+  variables: { score: 0, lines: 0 },
+  broadcasts: ['game over'],
+  sprites: [
+    {
+      id: 'sprite_tetromino',
+      name: 'Tetromino',
+      x: 0,
+      y: 150,
+      size: 110,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'all-around',
+      costumeEmoji: '🧱',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'SET_VAR', varName: 'lines', value: 0 },
+            { op: 'GOTO_XY', x: 0, y: 150 },
+            { op: 'SAY', text: 'Panah Kiri/Kanan Geser, Atas Putar!', seconds: 2 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'CHANGE_Y', dy: -4 },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 8 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -8 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowdown' }, substack: [{ op: 'CHANGE_Y', dy: -6 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowup' }, substack: [{ op: 'TURN_RIGHT', degrees: 90 }] },
+                {
+                  op: 'IF',
+                  condition: { type: 'TOUCHING', target: 'BaseDock' },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'coin' },
+                    { op: 'CHANGE_VAR', varName: 'score', delta: 25 },
+                    { op: 'CHANGE_VAR', varName: 'lines', delta: 1 },
+                    { op: 'GOTO_XY', x: { type: 'RANDOM', min: -160, max: 160 }, y: 160 },
+                  ],
+                },
+                {
+                  op: 'IF',
+                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -165 },
+                  substack: [
+                    { op: 'PLAY_SOUND', sound: 'hit' },
+                    { op: 'SAY', text: 'Meleset dari Dock! Game Over!', seconds: 2 },
+                    { op: 'SUBMIT_SCORE', score: { type: 'VAR', name: 'score' } },
+                    { op: 'STOP_ALL' },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'sprite_basedock',
+      name: 'BaseDock',
+      x: 0,
+      y: -135,
+      size: 135,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🟦',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'GOTO_XY', x: 0, y: -135 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'MOVE_STEPS', steps: 4 },
+                { op: 'IF_ON_EDGE_BOUNCE' },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// 5. BLANK PROJECT
 export const BLANK_STARTER_PROJECT: BlockVerseProject = {
   title: 'My Awesome Game',
   stageBackdrop: '#ffffff',
   stagePattern: 'grid',
-  variables: {
-    score: 0,
-  },
+  variables: { score: 0 },
   broadcasts: ['message1', 'game over', 'win'],
   sprites: [
     {
@@ -888,16 +1199,8 @@ export const BLANK_STARTER_PROJECT: BlockVerseProject = {
             {
               op: 'FOREVER',
               substack: [
-                {
-                  op: 'IF',
-                  condition: { type: 'KEY_PRESSED', key: 'arrowright' },
-                  substack: [{ op: 'CHANGE_X', dx: 6 }],
-                },
-                {
-                  op: 'IF',
-                  condition: { type: 'KEY_PRESSED', key: 'arrowleft' },
-                  substack: [{ op: 'CHANGE_X', dx: -6 }],
-                },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 6 }] },
+                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -6 }] },
               ],
             },
           ],
@@ -907,14 +1210,12 @@ export const BLANK_STARTER_PROJECT: BlockVerseProject = {
   ],
 };
 
-// 3. COIN HUNTER RPG
+// 6. COIN HUNTER RPG
 export const COIN_HUNTER_PRESET: BlockVerseProject = {
   title: 'Coin Hunter Adventure',
   stageBackdrop: '#e0f2fe',
   stagePattern: 'sky',
-  variables: {
-    score: 0,
-  },
+  variables: { score: 0 },
   broadcasts: ['got_coin', 'game over'],
   sprites: [
     {
@@ -981,16 +1282,12 @@ export const COIN_HUNTER_PRESET: BlockVerseProject = {
   ],
 };
 
-// 4. SPACE INVADERS
+// 7. SPACE INVADERS
 export const SPACE_INVADERS_PRESET: BlockVerseProject = {
   title: 'Space Invaders',
   stageBackdrop: '#05070d',
   stagePattern: 'stars',
-  variables: {
-    score: 0,
-    'alien-count': 0,
-    'march-steps': 5,
-  },
+  variables: { score: 0, 'alien-count': 0, 'march-steps': 5 },
   broadcasts: ['alien_hit', 'march', 'game over'],
   sprites: [
     {

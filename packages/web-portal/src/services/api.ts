@@ -1,14 +1,14 @@
+// packages/web-portal/src/services/api.ts
 import { GameManifest, GameSummary, UserProfile, LeaderboardEntry, UserRole } from '@blockgame/shared';
 
 const API_BASE = '/api';
 
-function getAuthHeader(): Record<string, string> {
+export function getAuthHeader(): Record<string, string> {
   const token = localStorage.getItem('blockgame_token');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// ==================== MOCK FALLBACK DATA UNTUK CLOUD / VERCEL ====================
-const MOCK_GAMES_KEY = 'blockgame_mock_games';
+const MOCK_GAMES_KEY = 'blockgame_mock_games_v3';
 const MOCK_USERS_KEY = 'blockgame_mock_users_v2';
 const CURRENT_USER_KEY = 'blockgame_current_user';
 
@@ -16,52 +16,56 @@ export interface StoredMockUser extends UserProfile {
   password?: string;
 }
 
+export interface StoredGameSummary extends GameSummary {
+  projectData?: any;
+}
+
 const DEFAULT_MOCK_USERS: StoredMockUser[] = [
-  { 
-    id: 'usr_admin', 
-    username: 'admin', 
-    email: 'admin@blockgame.cloud', 
-    password: 'admin123', 
-    role: UserRole.ADMIN, 
-    status: 'ACTIVE', 
-    createdAt: new Date().toISOString() 
+  {
+    id: 'usr_admin',
+    username: 'admin',
+    email: 'admin@blockgame.cloud',
+    password: 'admin123',
+    role: UserRole.ADMIN,
+    status: 'ACTIVE',
+    createdAt: new Date().toISOString(),
   },
-  { 
-    id: 'usr_dev', 
-    username: 'dev', 
-    email: 'dev@blockgame.cloud', 
-    password: 'dev123', 
-    role: UserRole.DEVELOPER, 
-    status: 'ACTIVE', 
-    createdAt: new Date().toISOString() 
+  {
+    id: 'usr_dev',
+    username: 'dev',
+    email: 'dev@blockgame.cloud',
+    password: 'dev123',
+    role: UserRole.DEVELOPER,
+    status: 'ACTIVE',
+    createdAt: new Date().toISOString(),
   },
-  { 
-    id: 'usr_player', 
-    username: 'player', 
-    email: 'player@blockgame.cloud', 
-    password: 'player123', 
-    role: UserRole.PLAYER, 
-    status: 'ACTIVE', 
-    createdAt: new Date().toISOString() 
+  {
+    id: 'usr_player',
+    username: 'player',
+    email: 'player@blockgame.cloud',
+    password: 'player123',
+    role: UserRole.PLAYER,
+    status: 'ACTIVE',
+    createdAt: new Date().toISOString(),
   },
-  { 
-    id: 'usr_pending', 
-    username: 'calon_dev', 
-    email: 'pending@blockgame.cloud', 
-    password: 'pending123', 
-    role: UserRole.DEVELOPER, 
-    status: 'PENDING', 
-    createdAt: new Date().toISOString() 
+  {
+    id: 'usr_pending',
+    username: 'calon_dev',
+    email: 'pending@blockgame.cloud',
+    password: 'pending123',
+    role: UserRole.DEVELOPER,
+    status: 'PENDING',
+    createdAt: new Date().toISOString(),
   },
 ];
 
-const INITIAL_MOCK_GAMES: GameSummary[] = [
+const INITIAL_MOCK_GAMES: StoredGameSummary[] = [
   {
     id: 'game_cat_star',
-    title: 'Petualangan Kucing Penangkap Bintang (Scratch)',
-    description: 'Game 2D Scratch 3.0 dengan Blockly Zelos, Web Audio Synthesizer & Direct Stage Drag-and-Drop.',
+    title: 'Cat & Star Catcher (Scratch 3.0)',
+    description: 'Tangkap bintang jatuh dan hindari bom dengan kucing Hero!',
     authorId: 'usr_dev',
-    authorName: 'Developer Studio',
+    authorName: 'dev',
     category: 'arcade',
     playCount: 142,
     highScore: 250,
@@ -70,43 +74,56 @@ const INITIAL_MOCK_GAMES: GameSummary[] = [
     updatedAt: new Date().toISOString(),
   },
   {
-    id: 'game_space_invaders',
-    title: 'Space Invaders Galaxy',
-    description: 'Tembak musuh alien luar angkasa dengan laser beam dan sistem skor coroutines realtime.',
+    id: 'game_flappy_bird',
+    title: 'Flappy Bird 2D Sky',
+    description: 'Tekan SPASI untuk terbang melewati rintangan pipa hijau dan raih skor tertinggi!',
     authorId: 'usr_dev',
-    authorName: 'Developer Studio',
-    category: 'action',
-    playCount: 98,
+    authorName: 'dev',
+    category: 'arcade',
+    playCount: 89,
     highScore: 180,
     isPublished: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
   {
-    id: 'game_coin_hunter',
-    title: 'Coin Hunter RPG',
-    description: 'Jelajahi labirin dungeon, hindari monster jahat dan kumpulkan koin emas.',
+    id: 'game_pong_arcade',
+    title: 'Neon Pong Arcade',
+    description: 'Pantulkan bola menggunakan papan paddle di bagian bawah layar dan jangan sampai jatuh!',
     authorId: 'usr_dev',
-    authorName: 'Developer Studio',
-    category: 'adventure',
-    playCount: 76,
-    highScore: 320,
+    authorName: 'dev',
+    category: 'classic',
+    playCount: 64,
+    highScore: 310,
+    isPublished: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'game_tetris_drop',
+    title: 'Tetris Block Drop',
+    description: 'Susun dan tangkap balok tetromino yang jatuh dari atas pada garis target!',
+    authorId: 'usr_dev',
+    authorName: 'dev',
+    category: 'puzzle',
+    playCount: 53,
+    highScore: 400,
     isPublished: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
 ];
 
-function getStoredMockGames(): GameSummary[] {
+function getStoredMockGames(): StoredGameSummary[] {
   const raw = localStorage.getItem(MOCK_GAMES_KEY);
   if (!raw) {
     localStorage.setItem(MOCK_GAMES_KEY, JSON.stringify(INITIAL_MOCK_GAMES));
-    return INITIAL_MOCK_GAMES;
+    return [...INITIAL_MOCK_GAMES];
   }
   try {
     return JSON.parse(raw);
   } catch {
-    return INITIAL_MOCK_GAMES;
+    return [...INITIAL_MOCK_GAMES];
   }
 }
 
@@ -128,17 +145,14 @@ function getStoredMockUsers(): StoredMockUser[] {
   }
 }
 
-// ==================== API SERVICE DENGAN VALIDASI KETAT ====================
 export const api = {
-  // Auth
   async login(usernameOrEmail: string, password: string): Promise<{ token: string; user: UserProfile }> {
     let networkError = false;
-
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: usernameOrEmail, email: usernameOrEmail, password })
+        body: JSON.stringify({ username: usernameOrEmail, email: usernameOrEmail, password }),
       });
 
       if (res.ok) {
@@ -147,53 +161,45 @@ export const api = {
         return data;
       }
 
-      // Backend aktif dan merespon error kredensial (401 / 400 / 404)
       const err = await res.json().catch(() => ({ error: 'Username/Email atau password salah' }));
       throw new Error(err.error || 'Username/Email atau password salah');
     } catch (e: any) {
-      // Jika error berasal dari backend (status 401 dsb), LEMPAR LANGSUNG ke UI (jangan ditelan!)
       if (e.message && e.message !== 'Failed to fetch' && !e.message.includes('NetworkError') && !e.message.includes('Load failed')) {
         throw e;
       }
-      // Hanya jika backend server mati / tidak terjangkau (Vercel client-only demo)
       networkError = true;
     }
 
-    // ================= FALLBACK KHUSUS OFFLINE / VERCEL STATIC =================
     if (networkError) {
       const users = getStoredMockUsers();
       const lower = usernameOrEmail.trim().toLowerCase();
-
-      // Cari user berdasarkan username atau email
-      const matched = users.find(u => 
-        u.username.toLowerCase() === lower || 
-        u.email.toLowerCase() === lower ||
-        (u.username === 'admin' && lower === 'admin')
+      const matched = users.find(
+        (u) =>
+          u.username.toLowerCase() === lower ||
+          u.email.toLowerCase() === lower ||
+          (u.username === 'admin' && lower === 'admin')
       );
 
       if (!matched) {
         throw new Error('Akun tidak ditemukan. Periksa kembali username/email atau daftar akun baru.');
       }
-
-      // Verifikasi kata sandi secara ketat
       if (matched.password && matched.password !== password) {
         throw new Error('Kata sandi (password) salah. Silakan coba lagi.');
       }
 
-      // Buat profile resmi sesuai data terdaftar (bukan default developer!)
       const profile: UserProfile = {
         id: matched.id,
         username: matched.username,
         email: matched.email,
         role: matched.role,
         status: matched.status,
-        createdAt: matched.createdAt
+        createdAt: matched.createdAt,
       };
 
       localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(profile));
       return {
         token: `demo_jwt_token_${Date.now()}`,
-        user: profile
+        user: profile,
       };
     }
 
@@ -202,12 +208,11 @@ export const api = {
 
   async register(username: string, email: string, password: string, role: UserRole): Promise<{ token: string; user: UserProfile }> {
     let networkError = false;
-
     try {
       const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password, role })
+        body: JSON.stringify({ username, email, password, role }),
       });
 
       if (res.ok) {
@@ -225,23 +230,18 @@ export const api = {
       networkError = true;
     }
 
-    // ================= FALLBACK KHUSUS OFFLINE / VERCEL STATIC =================
     if (networkError) {
       const users = getStoredMockUsers();
       const lowerUser = username.trim().toLowerCase();
       const lowerEmail = email.trim().toLowerCase();
 
-      const existing = users.find(u => 
-        u.username.toLowerCase() === lowerUser || 
-        u.email.toLowerCase() === lowerEmail
-      );
-
+      const existing = users.find((u) => u.username.toLowerCase() === lowerUser || u.email.toLowerCase() === lowerEmail);
       if (existing) {
-        throw new Error('Email atau username sudah terdaftar. Silakan buka tab Masuk (Login) untuk masuk ke akun Anda.');
+        throw new Error('Email atau username sudah terdaftar. Silakan buka tab Masuk (Login).');
       }
 
-      const assignedRole = (role === UserRole.DEVELOPER) ? UserRole.DEVELOPER : UserRole.PLAYER;
-      const initialStatus = (assignedRole === UserRole.DEVELOPER) ? 'PENDING' : 'ACTIVE';
+      const assignedRole = role === UserRole.DEVELOPER ? UserRole.DEVELOPER : UserRole.PLAYER;
+      const initialStatus = assignedRole === UserRole.DEVELOPER ? 'PENDING' : 'ACTIVE';
 
       const newUser: StoredMockUser = {
         id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -250,7 +250,7 @@ export const api = {
         password,
         role: assignedRole,
         status: initialStatus,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
 
       users.push(newUser);
@@ -262,14 +262,13 @@ export const api = {
         email: newUser.email,
         role: newUser.role,
         status: newUser.status,
-        createdAt: newUser.createdAt
+        createdAt: newUser.createdAt,
       };
 
       localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(profile));
-
       return {
         token: `demo_jwt_token_${Date.now()}`,
-        user: profile
+        user: profile,
       };
     }
 
@@ -279,7 +278,7 @@ export const api = {
   async getMe(): Promise<{ user: UserProfile }> {
     try {
       const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: { ...getAuthHeader() }
+        headers: { ...getAuthHeader() },
       });
       if (res.ok) return res.json();
     } catch {}
@@ -288,9 +287,8 @@ export const api = {
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        // Refresh status terkini dari database mock (misal setelah diapprove admin)
         const users = getStoredMockUsers();
-        const found = users.find(u => u.id === parsed.id || u.username === parsed.username);
+        const found = users.find((u) => u.id === parsed.id || u.username === parsed.username);
         if (found) {
           const updated: UserProfile = {
             id: found.id,
@@ -298,7 +296,7 @@ export const api = {
             email: found.email,
             role: found.role,
             status: found.status,
-            createdAt: found.createdAt
+            createdAt: found.createdAt,
           };
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated));
           return { user: updated };
@@ -310,8 +308,7 @@ export const api = {
     throw new Error('Unauthorized');
   },
 
-  // Games
-  async getGames(publishedOnly = true): Promise<{ games: GameSummary[] }> {
+  async getGames(publishedOnly = true): Promise<{ games: StoredGameSummary[] }> {
     try {
       const res = await fetch(`${API_BASE}/games?publishedOnly=${publishedOnly}`);
       if (res.ok) return res.json();
@@ -320,82 +317,109 @@ export const api = {
     return { games: getStoredMockGames() };
   },
 
-  async getGameManifest(gameId: string): Promise<GameManifest> {
+  async getGameManifest(gameId: string): Promise<GameManifest & { projectData?: any }> {
     try {
       const res = await fetch(`${API_BASE}/games/${gameId}/manifest`);
       if (res.ok) return res.json();
     } catch {}
 
-    // Fallback manifest
-    const cached = localStorage.getItem('blockverse_latest_project');
-    const projectData = cached ? JSON.parse(cached) : undefined;
+    // Cari di daftar mock games jika ada projectData tersimpan
+    const storedGames = getStoredMockGames();
+    const matchedGame = storedGames.find((g) => g.id === gameId);
+
+    const cachedLatest = localStorage.getItem(`blockverse_project_${gameId}`) || localStorage.getItem('blockverse_latest_project');
+    const resolvedProjectData = matchedGame?.projectData || (cachedLatest ? JSON.parse(cachedLatest) : undefined);
 
     return {
       id: gameId,
-      title: 'BlockVerse 2D Game Project',
-      description: 'Game 2D berbasis Scratch 3.0 Blockly engine',
-      authorId: 'dev_1',
+      title: matchedGame?.title || resolvedProjectData?.title || 'BlockVerse 2D Game Project',
+      description: matchedGame?.description || 'Game 2D berbasis Scratch 3.0 Blockly engine',
+      authorId: matchedGame?.authorId || 'dev_1',
+      authorName: matchedGame?.authorName || 'dev',
       version: '1.0.0',
-      category: 'arcade',
+      category: (matchedGame?.category as any) || 'arcade',
       canvas: {
         width: 480,
         height: 360,
         gridSize: 20,
-        backgroundColor: '#FFFFFF',
-        tickRateMs: 16
+        backgroundColor: resolvedProjectData?.stageBackdrop || '#090d16',
+        tickRateMs: 16,
       },
       entities: [],
-      logic: { events: [], onStart: [], onTick: [], onCollision: [] },
+      logic: { version: '1.0', blocks: [] } as any,
       isPublished: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      ...(projectData ? { projectData } as any : {})
+      projectData: resolvedProjectData,
     };
   },
 
   async publishGame(payload: any): Promise<{ message: string; gameId: string }> {
+    // Selalu simpan salinan projectData ke localStorage agar instan tersedia
+    if (payload.projectData) {
+      localStorage.setItem('blockverse_latest_project', JSON.stringify(payload.projectData));
+    }
+
     try {
       const res = await fetch(`${API_BASE}/games`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeader()
+          ...getAuthHeader(),
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
-      if (res.ok) return res.json();
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.gameId && payload.projectData) {
+          localStorage.setItem(`blockverse_project_${data.gameId}`, JSON.stringify(payload.projectData));
+        }
+        return data;
+      }
     } catch {}
 
+    // Fallback simpan ke daftar Katalog Mock agar tetap muncul di Katalog Game
+    const currentUserRaw = localStorage.getItem(CURRENT_USER_KEY);
+    const currentUser = currentUserRaw ? JSON.parse(currentUserRaw) : null;
+
     const gameId = `game_${Date.now()}`;
+    if (payload.projectData) {
+      localStorage.setItem(`blockverse_project_${gameId}`, JSON.stringify(payload.projectData));
+    }
+
     const games = getStoredMockGames();
+    const resolvedTitle = payload.title || payload.projectData?.title || 'Untitled Game';
+
     games.unshift({
       id: gameId,
-      title: payload.title || 'Untitled Game',
-      description: payload.description || 'Game dibuat di Developer Studio BlockVerse',
-      authorId: 'dev_current',
-      authorName: 'Developer Studio',
-      category: 'arcade',
+      title: resolvedTitle,
+      description: payload.description || `Game 2D interaktif buatan ${currentUser?.username || 'Developer'} di Studio Blok 2D`,
+      authorId: currentUser?.id || 'usr_dev',
+      authorName: currentUser?.username || 'dev',
+      category: payload.category || 'arcade',
       playCount: 1,
       highScore: 0,
-      isPublished: true,
+      isPublished: payload.status !== 'DRAFT',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      projectData: payload.projectData,
     });
     localStorage.setItem(MOCK_GAMES_KEY, JSON.stringify(games));
 
-    return { message: 'Game berhasil dipublish ke Cloud (Live Sync)!', gameId };
+    return { message: 'Game berhasil dipublish ke Cloud & Katalog!', gameId };
   },
 
   async deleteGame(gameId: string): Promise<void> {
     try {
       const res = await fetch(`${API_BASE}/games/${gameId}`, {
         method: 'DELETE',
-        headers: { ...getAuthHeader() }
+        headers: { ...getAuthHeader() },
       });
       if (res.ok) return;
     } catch {}
 
-    const games = getStoredMockGames().filter(g => g.id !== gameId);
+    const games = getStoredMockGames().filter((g) => g.id !== gameId);
     localStorage.setItem(MOCK_GAMES_KEY, JSON.stringify(games));
   },
 
@@ -407,13 +431,13 @@ export const api = {
 
   async submitScore(gameId: string, score: number): Promise<{ message: string }> {
     try {
-      const res = await fetch(`${API_BASE}/games/${gameId}/score`, {
+      const res = await fetch(`${API_BASE}/games/${gameId}/scores`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeader()
+          ...getAuthHeader(),
         },
-        body: JSON.stringify({ score })
+        body: JSON.stringify({ score }),
       });
       if (res.ok) return res.json();
     } catch {}
@@ -423,41 +447,57 @@ export const api = {
 
   async getLeaderboard(gameId: string): Promise<{ leaderboard: LeaderboardEntry[] }> {
     try {
-      const res = await fetch(`${API_BASE}/games/${gameId}/leaderboard`);
+      const res = await fetch(`${API_BASE}/games/${gameId}/scores`);
       if (res.ok) return res.json();
     } catch {}
 
     return {
       leaderboard: [
-        { id: '1', gameId, userId: 'usr_1', username: 'ChampionPlayer', score: 480, createdAt: new Date().toISOString() },
-        { id: '2', gameId, userId: 'usr_2', username: 'PixelMaster', score: 320, createdAt: new Date().toISOString() },
-        { id: '3', gameId, userId: 'usr_3', username: 'ScratchHero', score: 210, createdAt: new Date().toISOString() },
-      ]
+        { id: '1', gameId, userId: 'usr_1', username: 'ChampionPlayer', score: 250, createdAt: new Date().toISOString() },
+        { id: '2', gameId, userId: 'usr_2', username: 'PixelMaster', score: 180, createdAt: new Date().toISOString() },
+        { id: '3', gameId, userId: 'usr_3', username: 'ScratchHero', score: 120, createdAt: new Date().toISOString() },
+      ],
     };
   },
 
-  // Admin
   async getAdminMetrics(): Promise<any> {
     try {
       const res = await fetch(`${API_BASE}/admin/metrics`, {
-        headers: { ...getAuthHeader() }
+        headers: { ...getAuthHeader() },
       });
       if (res.ok) return res.json();
     } catch {}
 
+    const games = getStoredMockGames();
+    const users = getStoredMockUsers();
     return {
-      activeUsers: 34,
-      totalGames: getStoredMockGames().length,
-      totalPlays: 1250,
-      serverUptime: '99.98% (Online)',
-      nodeVersion: 'Node.js 22 (SQLite Built-in)'
+      metrics: {
+        totalUsers: users.length,
+        totalGames: games.length,
+        totalPlays: games.reduce((acc, g) => acc + (g.playCount || 0), 0),
+        totalScores: 12,
+        pendingDevsCount: users.filter((u) => u.role === UserRole.DEVELOPER && u.status === 'PENDING').length,
+        roles: [
+          { role: 'ADMIN', count: 1 },
+          { role: 'DEVELOPER', count: users.filter((u) => u.role === UserRole.DEVELOPER).length },
+          { role: 'PLAYER', count: users.filter((u) => u.role === UserRole.PLAYER).length },
+        ],
+      },
+      system: {
+        status: 'ONLINE',
+        uptimeSeconds: 3600,
+        memoryUsageMB: 48,
+        osPlatform: 'linux',
+        osUptimeHours: '24.0',
+        nodeVersion: 'v22.x',
+      },
     };
   },
 
   async getAdminUsers(): Promise<{ users: UserProfile[] }> {
     try {
       const res = await fetch(`${API_BASE}/admin/users`, {
-        headers: { ...getAuthHeader() }
+        headers: { ...getAuthHeader() },
       });
       if (res.ok) return res.json();
     } catch {}
@@ -471,26 +511,26 @@ export const api = {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeader()
+          ...getAuthHeader(),
         },
-        body: JSON.stringify({ role })
+        body: JSON.stringify({ role }),
       });
       if (res.ok) return;
     } catch {}
 
-    const users = getStoredMockUsers().map(u => u.id === userId ? { ...u, role } : u);
+    const users = getStoredMockUsers().map((u) => (u.id === userId ? { ...u, role } : u));
     localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users));
   },
 
   async getPendingDevelopers(): Promise<{ pendingUsers: UserProfile[] }> {
     try {
       const res = await fetch(`${API_BASE}/admin/pending-developers`, {
-        headers: { ...getAuthHeader() }
+        headers: { ...getAuthHeader() },
       });
       if (res.ok) return res.json();
     } catch {}
 
-    const users = getStoredMockUsers().filter(u => u.role === UserRole.DEVELOPER && u.status === 'PENDING');
+    const users = getStoredMockUsers().filter((u) => u.role === UserRole.DEVELOPER && u.status === 'PENDING');
     return { pendingUsers: users };
   },
 
@@ -498,26 +538,13 @@ export const api = {
     try {
       const res = await fetch(`${API_BASE}/admin/users/${userId}/approve`, {
         method: 'POST',
-        headers: { ...getAuthHeader() }
+        headers: { ...getAuthHeader() },
       });
       if (res.ok) return res.json();
     } catch {}
 
-    const users = getStoredMockUsers().map(u => u.id === userId ? { ...u, status: 'ACTIVE' as const } : u);
+    const users = getStoredMockUsers().map((u) => (u.id === userId ? { ...u, status: 'ACTIVE' as const } : u));
     localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users));
-
-    // Update session aktif jika user yang diapprove adalah user yang sedang login
-    const cached = localStorage.getItem(CURRENT_USER_KEY);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (parsed.id === userId) {
-          parsed.status = 'ACTIVE';
-          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(parsed));
-        }
-      } catch {}
-    }
-
     return { message: 'Akun developer berhasil disetujui (Approved)!' };
   },
 
@@ -525,12 +552,12 @@ export const api = {
     try {
       const res = await fetch(`${API_BASE}/admin/users/${userId}/reject`, {
         method: 'POST',
-        headers: { ...getAuthHeader() }
+        headers: { ...getAuthHeader() },
       });
       if (res.ok) return res.json();
     } catch {}
 
-    const users = getStoredMockUsers().map(u => u.id === userId ? { ...u, status: 'REJECTED' as const } : u);
+    const users = getStoredMockUsers().map((u) => (u.id === userId ? { ...u, status: 'REJECTED' as const } : u));
     localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users));
     return { message: 'Akun developer telah ditolak.' };
   },
@@ -541,11 +568,11 @@ export const api = {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeader()
+          ...getAuthHeader(),
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status }),
       });
       if (res.ok) return;
     } catch {}
-  }
+  },
 };
