@@ -36,3 +36,8 @@ Thumbs.db
 # Database (biarkan di-generate otomatis oleh seed db saat pertama kali run)
 packages/cloud-service/data/*.db
 packages/cloud-service/data/*.db-journal
+
+# Codebase bundles
+repomix-output.xml
+*.zip
+blockverse_codebase_full.txt
