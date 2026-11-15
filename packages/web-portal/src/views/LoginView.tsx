@@ -171,6 +171,44 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <span>{loading ? 'Memeriksa Kredensial...' : 'Masuk ke Layanan'}</span>
               </button>
 
+              <div className="pt-2 border-t border-slate-800/80">
+                <p className="text-[11px] font-semibold text-slate-400 mb-2">Akun Demo Bawaan (Klik untuk isi cepat):</p>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => { setIdentifier('dev'); setPassword('dev123'); setErrorMsg(null); }}
+                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                  >
+                    <span className="font-bold text-indigo-400 block">Developer</span>
+                    <span className="text-[10px] text-slate-500 font-mono">dev / dev123</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIdentifier('player'); setPassword('player123'); setErrorMsg(null); }}
+                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                  >
+                    <span className="font-bold text-emerald-400 block">Player</span>
+                    <span className="text-[10px] text-slate-500 font-mono">player / player123</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIdentifier('admin'); setPassword('admin123'); setErrorMsg(null); }}
+                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                  >
+                    <span className="font-bold text-amber-400 block">Admin</span>
+                    <span className="text-[10px] text-slate-500 font-mono">admin / admin123</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIdentifier('calon_dev'); setPassword('pending123'); setErrorMsg(null); }}
+                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                  >
+                    <span className="font-bold text-rose-400 block">Dev Pending</span>
+                    <span className="text-[10px] text-slate-500 font-mono">calon_dev / pending123</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl text-[11px] text-slate-400 space-y-1">
                 <p className="font-semibold text-slate-300">💡 Status Akun Developer:</p>
                 <p>Jika Anda telah mendaftar sebagai Developer, masuk di sini untuk mengecek status verifikasi atau mulai membuat game setelah disetujui Admin.</p>
