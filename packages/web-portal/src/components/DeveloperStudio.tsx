@@ -20,6 +20,10 @@ import {
   Upload,
   PlusCircle,
   Play,
+  Grid,
+  Maximize2,
+  Minimize2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   BLANK_STARTER_PROJECT,
@@ -67,6 +71,17 @@ const SPRITE_GALLERY_EMOJIS = [
   '⚡', '🔥', '💣', '🌵', '🧱', '🟦', '⚽', '🏆',
 ];
 
+const STAGE_THEMES = [
+  { id: 'sky', label: '🌤️ Meadow Hills', bg: '#e0f2fe' },
+  { id: 'stars', label: '🌌 Space Nebula', bg: '#05070d' },
+  { id: 'dungeon', label: '🏰 Castle Bricks', bg: '#1e1b4b' },
+  { id: 'neon', label: '🌆 Cyber City', bg: '#090d16' },
+  { id: 'desert', label: '🏜️ Desert Sunset', bg: '#f59e0b' },
+  { id: 'ocean', label: '🌊 Underwater Ocean', bg: '#0369a1' },
+  { id: 'arena', label: '🏟️ Stadium Pitch', bg: '#15803d' },
+  { id: 'grid', label: '📐 White Blueprint', bg: '#ffffff' },
+];
+
 export interface DeveloperStudioProps {
   onBack?: () => void;
   onGamePublished?: (gameId: string) => void;
@@ -86,6 +101,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
   const [activeTab, setActiveTab] = useState<'code' | 'costumes' | 'sounds'>('code');
   const [saveStatus, setSaveStatus] = useState<string>('');
   const [comments, setComments] = useState<StickyComment[]>([]);
+  const [isStageFullscreen, setIsStageFullscreen] = useState<boolean>(false);
 
   const blocklyDivRef = useRef<HTMLDivElement | null>(null);
   const workspaceRef = useRef<Blockly.WorkspaceSvg | null>(null);
@@ -313,9 +329,31 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // PERBAIKAN UTAMA UPLOAD GAME KE KATALOG CLOUD
+  const handleBackdropImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProject((prev) => ({
+        ...prev,
+        stageImageUrl: String(reader.result),
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCycleBackdrop = () => {
+    const idx = STAGE_THEMES.findIndex((t) => t.id === project.stagePattern);
+    const nextTheme = STAGE_THEMES[(idx + 1) % STAGE_THEMES.length];
+    setProject((prev) => ({
+      ...prev,
+      stageImageUrl: undefined,
+      stagePattern: nextTheme.id as any,
+      stageBackdrop: nextTheme.bg,
+    }));
+  };
+
   const handleSaveToCloud = async (publish: boolean = false) => {
-    // Pastikan blok di workspace aktif dikompilasi terbaru sebelum diupload
     let updatedProject = { ...project };
     if (workspaceRef.current) {
       const currentId = selectedSpriteIdRef.current;
@@ -503,8 +541,9 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
           </div>
         </div>
 
+        {/* Kontrol Atas Stage (Play, Stop, Comment, XY Grid Overlay, & Fullscreen) */}
         <div className="w-[496px] flex items-center justify-between px-1">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5">
             <button
               onClick={() => runtimeRef.current?.start()}
               title="Start Game (Green Flag)"
@@ -531,14 +570,38 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
                   },
                 ])
               }
-              className="ml-2 text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-2.5 py-1 rounded flex items-center gap-1 font-medium"
+              className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-2 py-1 rounded flex items-center gap-1 font-medium"
             >
               <StickyNote className="w-3.5 h-3.5" /> + Comment
             </button>
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">
-            💡 Drag sprite di layar untuk atur posisi
-          </span>
+
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={() =>
+                setProject((prev) => ({ ...prev, showStageGrid: !prev.showStageGrid }))
+              }
+              title="Tampilkan Sumbu Koordinat X/Y Scratch"
+              className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 border transition ${
+                project.showStageGrid
+                  ? 'bg-[#4C97FF] text-white border-[#4C97FF]'
+                  : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              <Grid className="w-3.5 h-3.5" /> XY Grid
+            </button>
+            <button
+              onClick={() => setIsStageFullscreen(!isStageFullscreen)}
+              title="Perbesar Layar Stage (Theater Mode)"
+              className="p-1.5 rounded bg-white border border-slate-300 text-slate-600 hover:text-slate-900 transition"
+            >
+              {isStageFullscreen ? (
+                <Minimize2 className="w-3.5 h-3.5" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -616,43 +679,56 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
               <hr className="border-slate-200" />
 
               <div>
-                <h3 className="text-base font-bold text-slate-800 mb-2">
-                  Tema Latar Belakang Stage (Backdrop)
+                <h3 className="text-base font-bold text-slate-800 mb-1">
+                  Pemandangan Latar Stage (Scenic Backdrops)
                 </h3>
-                <div className="flex flex-wrap gap-3 items-center">
-                  {[
-                    { id: 'grid', label: '📐 Kanvas Grid Putih', bg: '#ffffff' },
-                    { id: 'sky', label: '🌤️ Padang Rumput & Langit', bg: '#e0f2fe' },
-                    { id: 'stars', label: '🌌 Luar Angkasa', bg: '#05070d' },
-                    { id: 'none', label: '🏰 Dungeon Gelap', bg: '#1e1b4b' },
-                  ].map((theme) => (
+                <p className="text-xs text-slate-500 mb-3">
+                  Pilih latar ilustrasi multi-layer atau unggah gambar wallpaper game milikmu sendiri.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                  {STAGE_THEMES.map((theme) => (
                     <button
                       key={theme.id}
                       onClick={() =>
                         setProject((prev) => ({
                           ...prev,
+                          stageImageUrl: undefined,
                           stagePattern: theme.id as any,
                           stageBackdrop: theme.bg,
                         }))
                       }
-                      className={`px-4 py-2 rounded-lg text-xs font-bold border-2 transition ${
-                        project.stagePattern === theme.id
+                      className={`px-3 py-2.5 rounded-xl text-xs font-bold border-2 text-left transition ${
+                        project.stagePattern === theme.id && !project.stageImageUrl
                           ? 'border-[#4C97FF] bg-blue-50 text-[#4C97FF]'
-                          : 'border-slate-200 text-slate-700'
+                          : 'border-slate-200 text-slate-700 hover:border-slate-300'
                       }`}
                     >
                       {theme.label}
                     </button>
                   ))}
+                </div>
 
-                  <div className="flex items-center gap-2 ml-2">
-                    <span className="text-xs font-semibold text-slate-600">Warna Kustom:</span>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg cursor-pointer transition">
+                    <ImageIcon className="w-4 h-4" />
+                    Upload Wallpaper Stage (JPG/PNG)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleBackdropImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600">Warna Polos:</span>
                     <input
                       type="color"
                       value={project.stageBackdrop}
                       onChange={(e) =>
                         setProject((prev) => ({
                           ...prev,
+                          stageImageUrl: undefined,
                           stagePattern: 'none',
                           stageBackdrop: e.target.value,
                         }))
@@ -746,150 +822,253 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
             ))}
         </div>
 
-        {/* KANAN: Live Stage (480x360) + Sprite Inspector + Sprite Selector Grid */}
-        <div className="w-[496px] bg-[#E5F0FF] p-2 flex flex-col space-y-2 overflow-y-auto">
-          <div className="bg-black rounded-lg overflow-hidden border border-slate-300 shadow-sm flex items-center justify-center cursor-grab active:cursor-grabbing">
+        {/* KANAN: Live Stage (480x360) + Sprite Inspector + Split Target Pane (Sprites + Stage Backdrop) */}
+        <div
+          className={`${
+            isStageFullscreen
+              ? 'fixed inset-0 z-50 bg-slate-950/95 flex flex-col items-center justify-center p-6'
+              : 'w-[496px] bg-[#E5F0FF] p-2 flex flex-col space-y-2 overflow-y-auto'
+          }`}
+        >
+          {isStageFullscreen && (
+            <div className="w-full max-w-[760px] flex items-center justify-between mb-3 text-white">
+              <div className="flex items-center gap-3">
+                <span className="font-extrabold text-base">{project.title}</span>
+                <button
+                  onClick={() => runtimeRef.current?.start()}
+                  className="px-3 py-1 rounded bg-emerald-500 hover:bg-emerald-600 text-xs font-bold flex items-center gap-1"
+                >
+                  <Flag className="w-3.5 h-3.5 fill-white" /> Play
+                </button>
+                <button
+                  onClick={() => runtimeRef.current?.stop()}
+                  className="px-3 py-1 rounded bg-rose-600 hover:bg-rose-500 text-xs font-bold flex items-center gap-1"
+                >
+                  <Octagon className="w-3.5 h-3.5 fill-white" /> Stop
+                </button>
+              </div>
+              <button
+                onClick={() => setIsStageFullscreen(false)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold flex items-center gap-1.5"
+              >
+                <Minimize2 className="w-4 h-4" /> Keluar Fullscreen
+              </button>
+            </div>
+          )}
+
+          <div
+            className={`bg-black rounded-lg overflow-hidden border-2 border-slate-300 shadow-md flex items-center justify-center cursor-grab active:cursor-grabbing ${
+              isStageFullscreen ? 'w-[760px] h-[570px]' : ''
+            }`}
+          >
             <canvas
               ref={stageCanvasRef}
               width={480}
               height={360}
-              className="w-[480px] h-[360px] block"
+              className={
+                isStageFullscreen ? 'w-full h-full block' : 'w-[480px] h-[360px] block'
+              }
             />
           </div>
 
-          <div className="bg-white rounded-lg p-3 border border-slate-300 text-xs space-y-2.5 shadow-sm">
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-1.5 flex-1">
-                <span className="font-semibold text-slate-600">Sprite</span>
-                <input
-                  type="text"
-                  value={activeSprite.name}
-                  onChange={(e) => updateActiveSpriteProp('name', e.target.value)}
-                  className="border border-slate-300 rounded-full px-3 py-1 w-28 font-semibold text-slate-800 outline-none focus:border-[#4C97FF]"
-                />
-              </div>
+          {!isStageFullscreen && (
+            <>
+              {/* Sprite Inspector Bar */}
+              <div className="bg-white rounded-lg p-3 border border-slate-300 text-xs space-y-2.5 shadow-sm">
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1.5 flex-1">
+                    <span className="font-semibold text-slate-600">Sprite</span>
+                    <input
+                      type="text"
+                      value={activeSprite.name}
+                      onChange={(e) => updateActiveSpriteProp('name', e.target.value)}
+                      className="border border-slate-300 rounded-full px-3 py-1 w-28 font-semibold text-slate-800 outline-none focus:border-[#4C97FF]"
+                    />
+                  </div>
 
-              <div className="flex items-center space-x-1">
-                <span className="font-bold text-slate-500">↔ x</span>
-                <input
-                  type="number"
-                  value={activeSprite.x}
-                  onChange={(e) =>
-                    updateActiveSpriteProp('x', Number(e.target.value))
-                  }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
-                />
-              </div>
+                  <div className="flex items-center space-x-1">
+                    <span className="font-bold text-slate-500">↔ x</span>
+                    <input
+                      type="number"
+                      value={activeSprite.x}
+                      onChange={(e) =>
+                        updateActiveSpriteProp('x', Number(e.target.value))
+                      }
+                      className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
+                    />
+                  </div>
 
-              <div className="flex items-center space-x-1">
-                <span className="font-bold text-slate-500">↕ y</span>
-                <input
-                  type="number"
-                  value={activeSprite.y}
-                  onChange={(e) =>
-                    updateActiveSpriteProp('y', Number(e.target.value))
-                  }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
-                />
-              </div>
-            </div>
+                  <div className="flex items-center space-x-1">
+                    <span className="font-bold text-slate-500">↕ y</span>
+                    <input
+                      type="number"
+                      value={activeSprite.y}
+                      onChange={(e) =>
+                        updateActiveSpriteProp('y', Number(e.target.value))
+                      }
+                      className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
+                    />
+                  </div>
+                </div>
 
-            <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-              <div className="flex items-center space-x-2">
-                <span className="font-semibold text-slate-600">Show</span>
-                <button
-                  onClick={() => updateActiveSpriteProp('visible', true)}
-                  className={`p-1.5 rounded-full border ${
-                    activeSprite.visible
-                      ? 'bg-[#4C97FF] text-white border-[#4C97FF]'
-                      : 'text-slate-400 border-slate-200'
-                  }`}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => updateActiveSpriteProp('visible', false)}
-                  className={`p-1.5 rounded-full border ${
-                    !activeSprite.visible
-                      ? 'bg-[#4C97FF] text-white border-[#4C97FF]'
-                      : 'text-slate-400 border-slate-200'
-                  }`}
-                >
-                  <EyeOff className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-1.5">
-                <span className="font-semibold text-slate-600">Size</span>
-                <input
-                  type="number"
-                  value={activeSprite.size}
-                  onChange={(e) =>
-                    updateActiveSpriteProp('size', Number(e.target.value))
-                  }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
-                />
-              </div>
-
-              <div className="flex items-center space-x-1.5">
-                <span className="font-semibold text-slate-600">Direction</span>
-                <input
-                  type="number"
-                  value={activeSprite.direction}
-                  onChange={(e) =>
-                    updateActiveSpriteProp('direction', Number(e.target.value))
-                  }
-                  className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-1 bg-white rounded-lg p-3 border border-slate-300 relative overflow-y-auto">
-            <div className="grid grid-cols-5 gap-2.5">
-              {project.sprites.map((sp) => {
-                const isSelected = sp.id === activeSprite.id;
-                return (
-                  <div
-                    key={sp.id}
-                    onClick={() => setSelectedSpriteId(sp.id)}
-                    className={`relative rounded-lg border-2 cursor-pointer flex flex-col items-center justify-between pt-2 pb-1 transition ${
-                      isSelected
-                        ? 'border-[#4C97FF] bg-blue-50/40 shadow-sm'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
-                  >
-                    {isSelected && project.sprites.length > 1 && (
-                      <button
-                        onClick={(e) => handleDeleteSprite(sp.id, e)}
-                        className="absolute -top-2 -right-2 bg-[#4C97FF] text-white p-1 rounded-full shadow hover:bg-rose-500 transition"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                    <div className="text-2xl my-1">{sp.costumeEmoji}</div>
-                    <div
-                      className={`w-full text-center text-[10px] font-semibold truncate px-1 py-0.5 rounded-b ${
-                        isSelected
-                          ? 'bg-[#4C97FF] text-white'
-                          : 'bg-slate-100 text-slate-700'
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-semibold text-slate-600">Show</span>
+                    <button
+                      onClick={() => updateActiveSpriteProp('visible', true)}
+                      className={`p-1.5 rounded-full border ${
+                        activeSprite.visible
+                          ? 'bg-[#4C97FF] text-white border-[#4C97FF]'
+                          : 'text-slate-400 border-slate-200'
                       }`}
                     >
-                      {sp.name}
-                    </div>
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => updateActiveSpriteProp('visible', false)}
+                      className={`p-1.5 rounded-full border ${
+                        !activeSprite.visible
+                          ? 'bg-[#4C97FF] text-white border-[#4C97FF]'
+                          : 'text-slate-400 border-slate-200'
+                      }`}
+                    >
+                      <EyeOff className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                );
-              })}
-            </div>
 
-            <button
-              onClick={() => handleAddSprite('⭐')}
-              title="Tambah Sprite Baru"
-              className="fixed bottom-5 right-5 bg-[#4C97FF] hover:bg-[#3b82f6] text-white p-3 rounded-full shadow-lg transition"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
+                  <div className="flex items-center space-x-1.5">
+                    <span className="font-semibold text-slate-600">Size</span>
+                    <input
+                      type="number"
+                      value={activeSprite.size}
+                      onChange={(e) =>
+                        updateActiveSpriteProp('size', Number(e.target.value))
+                      }
+                      className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-1.5">
+                    <span className="font-semibold text-slate-600">Direction</span>
+                    <input
+                      type="number"
+                      value={activeSprite.direction}
+                      onChange={(e) =>
+                        updateActiveSpriteProp('direction', Number(e.target.value))
+                      }
+                      className="border border-slate-300 rounded-full px-2 py-1 w-16 text-center font-semibold text-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Split Pane Bawah: Daftar Kartu Sprite (Kiri) + Kartu Stage Backdrop (Kanan, Persis Scratch 3.0) */}
+              <div className="flex-1 flex space-x-2 overflow-hidden">
+                {/* Daftar Sprite */}
+                <div className="flex-1 bg-white rounded-lg p-3 border border-slate-300 relative overflow-y-auto">
+                  <div className="grid grid-cols-4 gap-2">
+                    {project.sprites.map((sp) => {
+                      const isSelected = sp.id === activeSprite.id;
+                      return (
+                        <div
+                          key={sp.id}
+                          onClick={() => setSelectedSpriteId(sp.id)}
+                          className={`relative rounded-lg border-2 cursor-pointer flex flex-col items-center justify-between pt-2 pb-1 transition ${
+                            isSelected
+                              ? 'border-[#4C97FF] bg-blue-50/40 shadow-sm'
+                              : 'border-slate-200 hover:border-slate-300 bg-white'
+                          }`}
+                        >
+                          {isSelected && project.sprites.length > 1 && (
+                            <button
+                              onClick={(e) => handleDeleteSprite(sp.id, e)}
+                              className="absolute -top-2 -right-2 bg-[#4C97FF] text-white p-1 rounded-full shadow hover:bg-rose-500 transition"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                          <div className="text-2xl my-1">{sp.costumeEmoji}</div>
+                          <div
+                            className={`w-full text-center text-[10px] font-semibold truncate px-1 py-0.5 rounded-b ${
+                              isSelected
+                                ? 'bg-[#4C97FF] text-white'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {sp.name}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => handleAddSprite('⭐')}
+                    title="Tambah Sprite Baru"
+                    className="absolute bottom-3 right-3 bg-[#4C97FF] hover:bg-[#3b82f6] text-white p-2.5 rounded-full shadow-lg transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Panel Stage / Backdrop di Kanan Bawah (Identik dengan Scratch 3.0) */}
+                <div className="w-24 bg-white rounded-lg p-2 border border-slate-300 flex flex-col items-center justify-between text-center shadow-sm">
+                  <span className="text-[11px] font-bold text-slate-600">Stage</span>
+
+                  <div
+                    onClick={handleCycleBackdrop}
+                    title="Klik untuk ganti pemandangan Stage"
+                    className="w-full h-16 rounded-md border-2 border-[#4C97FF] cursor-pointer flex flex-col items-center justify-center p-1 text-[10px] font-bold text-white shadow-inner transition hover:opacity-90"
+                    style={{
+                      background:
+                        project.stageImageUrl
+                          ? `url(${project.stageImageUrl}) center/cover no-repeat`
+                          : project.stagePattern === 'sky'
+                          ? 'linear-gradient(to bottom, #38bdf8 65%, #16a34a 35%)'
+                          : project.stagePattern === 'stars'
+                          ? '#090d16'
+                          : project.stagePattern === 'neon'
+                          ? 'linear-gradient(to bottom, #311042, #701a75)'
+                          : project.stagePattern === 'desert'
+                          ? 'linear-gradient(to bottom, #f97316, #f59e0b)'
+                          : project.stagePattern === 'ocean'
+                          ? 'linear-gradient(to bottom, #0284c7, #082f49)'
+                          : project.stagePattern === 'arena'
+                          ? '#15803d'
+                          : project.stagePattern === 'dungeon'
+                          ? '#1e1b4b'
+                          : project.stageBackdrop || '#ffffff',
+                    }}
+                  >
+                    <span className="bg-black/45 px-1.5 py-0.5 rounded text-[9px] truncate max-w-full">
+                      {project.stageImageUrl ? 'image' : project.stagePattern || 'custom'}
+                    </span>
+                  </div>
+
+                  <div className="w-full space-y-1">
+                    <button
+                      onClick={handleCycleBackdrop}
+                      className="w-full bg-blue-50 hover:bg-blue-100 text-[#4C97FF] border border-blue-200 rounded py-1 text-[10px] font-bold transition"
+                    >
+                      Ganti Latar
+                    </button>
+                    <label
+                      title="Upload Gambar Latar (JPG/PNG)"
+                      className="w-full bg-[#4C97FF] hover:bg-blue-600 text-white rounded py-1 text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer transition"
+                    >
+                      <ImageIcon className="w-3 h-3" /> Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBackdropImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -31,7 +31,9 @@ export interface BlockVerseProject {
   id?: string;
   title: string;
   stageBackdrop: string;
-  stagePattern?: 'none' | 'stars' | 'grid' | 'sky' | 'dungeon';
+  stagePattern?: 'none' | 'stars' | 'grid' | 'sky' | 'dungeon' | 'neon' | 'desert' | 'ocean' | 'arena';
+  stageImageUrl?: string; // Mendukung upload gambar background bebas (JPG/PNG/SVG)
+  showStageGrid?: boolean; // Menampilkan garis bantu koordinat X/Y Scratch
   variables: Record<string, number | string | boolean>;
   broadcasts: string[];
   sprites: SpriteTarget[];
@@ -951,22 +953,277 @@ export class BlockVerseRuntime {
     }
   }
 
-  public renderFrame() {
+  private renderScenicBackdrop() {
     const { ctx, canvas } = this;
-    const now = performance.now();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const pattern = this.project.stagePattern || 'sky';
 
+    // Jika developer mengunggah gambar background kustom (JPG/PNG)
+    if (this.project.stageImageUrl) {
+      let bgImg = this.imageCache.get(this.project.stageImageUrl);
+      if (!bgImg) {
+        bgImg = new Image();
+        bgImg.src = this.project.stageImageUrl;
+        this.imageCache.set(this.project.stageImageUrl, bgImg);
+      }
+      if (bgImg.complete && bgImg.naturalWidth > 0) {
+        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+        if (this.project.showStageGrid) {
+          this.renderGridOverlay();
+        }
+        return;
+      }
+    }
+
+    // Warna dasar fallback
     ctx.fillStyle = this.project.stageBackdrop || '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const pattern = this.project.stagePattern || 'grid';
-    if (pattern === 'stars') {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-      for (let i = 0; i < 38; i++) {
-        ctx.fillRect(((i * 97) % 460) + 10, ((i * 53) % 340) + 10, 2, 2);
+    if (pattern === 'sky') {
+      // 1. Langit Gradasi Halus
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, 270);
+      skyGrad.addColorStop(0, '#0284c7');
+      skyGrad.addColorStop(0.55, '#38bdf8');
+      skyGrad.addColorStop(1, '#e0f2fe');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, 480, 270);
+
+      // 2. Matahari Bersinar
+      ctx.fillStyle = 'rgba(253, 224, 71, 0.25)';
+      ctx.beginPath();
+      ctx.arc(410, 60, 42, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(410, 60, 26, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. Awan Putih Lembut
+      const drawCloud = (cx: number, cy: number, s: number) => {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 18 * s, 0, Math.PI * 2);
+        ctx.arc(cx + 16 * s, cy - 6 * s, 22 * s, 0, Math.PI * 2);
+        ctx.arc(cx + 34 * s, cy, 17 * s, 0, Math.PI * 2);
+        ctx.fill();
+      };
+      drawCloud(75, 65, 1);
+      drawCloud(230, 48, 0.85);
+      drawCloud(325, 95, 0.7);
+
+      // 4. Siluet Bukit Hijau Jauh (Parallax Layer)
+      ctx.fillStyle = '#86efac';
+      ctx.beginPath();
+      ctx.moveTo(0, 270);
+      ctx.quadraticCurveTo(120, 195, 260, 270);
+      ctx.quadraticCurveTo(380, 205, 480, 265);
+      ctx.lineTo(480, 280);
+      ctx.lineTo(0, 280);
+      ctx.fill();
+
+      // 5. Bukit Hijau Dekat
+      ctx.fillStyle = '#4ade80';
+      ctx.beginPath();
+      ctx.moveTo(0, 275);
+      ctx.quadraticCurveTo(90, 230, 210, 275);
+      ctx.quadraticCurveTo(350, 225, 480, 275);
+      ctx.lineTo(480, 360);
+      ctx.lineTo(0, 360);
+      ctx.fill();
+
+      // 6. Padang Rumput Utama & Tekstur Tanah
+      const grassGrad = ctx.createLinearGradient(0, 268, 0, 360);
+      grassGrad.addColorStop(0, '#22c55e');
+      grassGrad.addColorStop(0.15, '#16a34a');
+      grassGrad.addColorStop(1, '#15803d');
+      ctx.fillStyle = grassGrad;
+      ctx.fillRect(0, 268, 480, 92);
+
+      // Garis highlight pucuk rumput
+      ctx.fillStyle = '#86efac';
+      ctx.fillRect(0, 268, 480, 4);
+    } else if (pattern === 'stars') {
+      // Luar Angkasa & Nebula
+      const spaceGrad = ctx.createLinearGradient(0, 0, 480, 360);
+      spaceGrad.addColorStop(0, '#030712');
+      spaceGrad.addColorStop(0.5, '#0f172a');
+      spaceGrad.addColorStop(1, '#1e1b4b');
+      ctx.fillStyle = spaceGrad;
+      ctx.fillRect(0, 0, 480, 360);
+
+      // Nebula Glow
+      const radGrad = ctx.createRadialGradient(130, 110, 10, 130, 110, 140);
+      radGrad.addColorStop(0, 'rgba(139, 92, 246, 0.25)');
+      radGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+      ctx.fillStyle = radGrad;
+      ctx.fillRect(0, 0, 480, 360);
+
+      // Bintang-bintang
+      for (let i = 0; i < 55; i++) {
+        ctx.fillStyle = i % 4 === 0 ? '#fde047' : 'rgba(255, 255, 255, 0.65)';
+        const sz = i % 5 === 0 ? 2.5 : 1.5;
+        ctx.fillRect(((i * 97) % 460) + 10, ((i * 53) % 340) + 10, sz, sz);
       }
+
+      // Planet Bercincin di Kejauhan
+      ctx.save();
+      ctx.translate(385, 85);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 42, 12, -0.3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#6366f1';
+      ctx.beginPath();
+      ctx.arc(0, 0, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else if (pattern === 'dungeon') {
+      // Dinding Bata Dungeon Gelap
+      ctx.fillStyle = '#1e1b4b';
+      ctx.fillRect(0, 0, 480, 360);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.lineWidth = 1.5;
+      for (let r = 0; r < 360; r += 24) {
+        const offset = (r / 24) % 2 === 0 ? 0 : 24;
+        for (let c = -24; c < 480; c += 48) {
+          ctx.strokeRect(c + offset, r, 48, 24);
+        }
+      }
+      // Lantai Batu Bawah Tanah
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 290, 480, 70);
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(0, 290, 480, 5);
+    } else if (pattern === 'neon') {
+      // Cyberpunk Neon Synthwave
+      const neonGrad = ctx.createLinearGradient(0, 0, 0, 240);
+      neonGrad.addColorStop(0, '#090d16');
+      neonGrad.addColorStop(0.6, '#311042');
+      neonGrad.addColorStop(1, '#701a75');
+      ctx.fillStyle = neonGrad;
+      ctx.fillRect(0, 0, 480, 240);
+
+      // Siluet Gedung Kota
+      ctx.fillStyle = '#0f172a';
+      const widths = [45, 60, 38, 70, 52, 65, 48, 55, 60];
+      let curX = 0;
+      widths.forEach((w, idx) => {
+        const h = 50 + ((idx * 37) % 85);
+        ctx.fillRect(curX, 240 - h, w - 2, h);
+        curX += w;
+      });
+
+      // Lantai Grid Neon
+      ctx.fillStyle = '#1e1b4b';
+      ctx.fillRect(0, 240, 480, 120);
+      ctx.strokeStyle = 'rgba(236, 72, 153, 0.45)';
+      ctx.lineWidth = 1.5;
+      for (let y = 240; y <= 360; y += 20) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(480, y);
+        ctx.stroke();
+      }
+      for (let x = 0; x <= 480; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(240 + (x - 240) * 0.4, 240);
+        ctx.lineTo(x, 360);
+        ctx.stroke();
+      }
+    } else if (pattern === 'desert') {
+      // Gurun Pasir Senja
+      const desertSky = ctx.createLinearGradient(0, 0, 0, 260);
+      desertSky.addColorStop(0, '#f97316');
+      desertSky.addColorStop(0.6, '#fdba74');
+      desertSky.addColorStop(1, '#fef08a');
+      ctx.fillStyle = desertSky;
+      ctx.fillRect(0, 0, 480, 260);
+
+      // Piramida Siluet
+      ctx.fillStyle = '#d97706';
+      ctx.beginPath();
+      ctx.moveTo(90, 260);
+      ctx.lineTo(165, 165);
+      ctx.lineTo(240, 260);
+      ctx.fill();
+
+      // Padang Pasir
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(0, 260, 480, 100);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(0, 260, 480, 6);
+    } else if (pattern === 'ocean') {
+      // Laut Bawah Air (Underwater Ocean)
+      const oceanGrad = ctx.createLinearGradient(0, 0, 0, 360);
+      oceanGrad.addColorStop(0, '#0284c7');
+      oceanGrad.addColorStop(0.4, '#0369a1');
+      oceanGrad.addColorStop(0.8, '#0c4a6e');
+      oceanGrad.addColorStop(1, '#082f49');
+      ctx.fillStyle = oceanGrad;
+      ctx.fillRect(0, 0, 480, 360);
+
+      // Sinar Cahaya Menembus Air
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.beginPath();
+      ctx.moveTo(120, 0);
+      ctx.lineTo(180, 0);
+      ctx.lineTo(260, 360);
+      ctx.lineTo(160, 360);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(300, 0);
+      ctx.lineTo(360, 0);
+      ctx.lineTo(440, 360);
+      ctx.lineTo(350, 360);
+      ctx.fill();
+      ctx.restore();
+
+      // Gelembung Udara
+      for (let i = 0; i < 24; i++) {
+        const bx = ((i * 73) % 450) + 15;
+        const by = ((i * 47) % 320) + 20;
+        const br = (i % 4) + 2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Dasar Pasir Laut
+      ctx.fillStyle = '#ca8a04';
+      ctx.beginPath();
+      ctx.moveTo(0, 335);
+      ctx.quadraticCurveTo(140, 315, 280, 340);
+      ctx.quadraticCurveTo(390, 355, 480, 330);
+      ctx.lineTo(480, 360);
+      ctx.lineTo(0, 360);
+      ctx.fill();
+      ctx.fillStyle = '#eab308';
+      ctx.fillRect(0, 352, 480, 8);
+    } else if (pattern === 'arena') {
+      // Lapangan Stadion / Pong Arena
+      ctx.fillStyle = '#15803d';
+      ctx.fillRect(0, 0, 480, 360);
+      for (let x = 0; x < 480; x += 60) {
+        if ((x / 60) % 2 === 0) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+          ctx.fillRect(x, 0, 60, 360);
+        }
+      }
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(16, 16, 448, 328);
+      ctx.beginPath();
+      ctx.moveTo(240, 16);
+      ctx.lineTo(240, 344);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(240, 180, 42, 0, Math.PI * 2);
+      ctx.stroke();
     } else if (pattern === 'grid') {
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
       ctx.lineWidth = 1;
       for (let x = 0; x <= 480; x += 30) {
         ctx.beginPath();
@@ -980,21 +1237,62 @@ export class BlockVerseRuntime {
         ctx.lineTo(480, y);
         ctx.stroke();
       }
-    } else if (pattern === 'sky') {
-      const grad = ctx.createLinearGradient(0, 0, 0, 360);
-      grad.addColorStop(0, '#38bdf8');
-      grad.addColorStop(0.75, '#bae6fd');
-      grad.addColorStop(0.75, '#4ade80');
-      grad.addColorStop(1, '#16a34a');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 480, 360);
     }
 
-    // Jika mode Matrix Tetris aktif, gambar papan 10x16 beserta seluruh balok Tetromino
+    if (this.project.showStageGrid) {
+      this.renderGridOverlay();
+    }
+  }
+
+  private renderGridOverlay() {
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.22)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= 480; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 360);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= 360; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(480, y);
+      ctx.stroke();
+    }
+    // Sumbu Utama X=0 dan Y=0
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(240, 0);
+    ctx.lineTo(240, 360);
+    ctx.moveTo(0, 180);
+    ctx.lineTo(480, 180);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('(0,0)', 244, 174);
+    ctx.fillText('Y: 180', 244, 12);
+    ctx.fillText('Y: -180', 244, 354);
+    ctx.fillText('X: -240', 6, 174);
+    ctx.fillText('X: 240', 435, 174);
+    ctx.restore();
+  }
+
+  public renderFrame() {
+    const { ctx, canvas } = this;
+    const now = performance.now();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Gambar Latar Belakang Scenic / Custom Wallpaper
+    this.renderScenicBackdrop();
+
+    // 2. Render Papan Matrix Tetris (jika aktif) atau Sprite Standar
     if (this.tetris && this.tetris.active) {
       this.renderTetrisBoard();
     } else {
-      // Render Sprite Standar
       for (const entity of this.entities) {
         if (!entity.visible) continue;
 
@@ -1054,16 +1352,16 @@ export class BlockVerseRuntime {
       }
     }
 
-    // Render Badge Variabel (Score, Lines, dll.)
+    // 3. Render Badge Variabel di Pojok Kiri Atas Stage
     const varKeys = Object.keys(this.variables);
     varKeys.forEach((key, idx) => {
       const val = this.variables[key];
       const badgeX = 12;
-      const badgeY = 20 + idx * 32;
+      const badgeY = 14 + idx * 30;
       const label = `${key}: ${val}`;
 
       ctx.font = 'bold 12px sans-serif';
-      const boxW = Math.max(78, ctx.measureText(label).width + 20);
+      const boxW = Math.max(74, ctx.measureText(label).width + 20);
 
       ctx.fillStyle = '#ff8c1a';
       ctx.beginPath();
