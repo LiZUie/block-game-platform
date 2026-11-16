@@ -346,6 +346,29 @@ export function registerScratchBlocks() {
       nextStatement: null,
       colour: '#4C97FF',
     },
+    // --- BLOK KHUSUS SPACE SHOOTER / SPACE INVADERS ---
+    {
+      type: 'space_step',
+      message0: '🛸 space: update fleet, lasers, enemy fire & HP',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'space_move',
+      message0: '🛸 space: move player ship by %1',
+      args0: [{ type: 'input_value', name: 'DX', check: 'Number' }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'space_shoot',
+      message0: '⚡ space: fire twin laser from ship position',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
 
     // LOOKS
     {
@@ -689,6 +712,9 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     { kind: 'block', type: 'flappy_flap' },
     { kind: 'block', type: 'snake_step' },
     { kind: 'block', type: 'snake_dir' },
+    { kind: 'block', type: 'space_step' },
+    { kind: 'block', type: 'space_move', inputs: { DX: { shadow: { type: 'math_number', fields: { NUM: 8 } } } } },
+    { kind: 'block', type: 'space_shoot' },
   ],
   Looks: [
     {
@@ -932,6 +958,15 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
       case 'snake_dir':
         ops.push({ op: 'SNAKE_DIR', dir: current.getFieldValue('DIR') });
         break;
+      case 'space_step':
+        ops.push({ op: 'SPACE_STEP' });
+        break;
+      case 'space_move':
+        ops.push({ op: 'SPACE_MOVE', dx: compileInputValue(current.getInputTargetBlock('DX')) });
+        break;
+      case 'space_shoot':
+        ops.push({ op: 'SPACE_SHOOT' });
+        break;
       case 'looks_sayforsecs':
         ops.push({
           op: 'SAY',
@@ -1134,6 +1169,12 @@ function opsToXmlChain(ops: CompiledOp[], index: number = 0): string {
       return `<block type="snake_step">${nextXml}</block>`;
     case 'SNAKE_DIR':
       return `<block type="snake_dir"><field name="DIR">${op.dir || 'RIGHT'}</field>${nextXml}</block>`;
+    case 'SPACE_STEP':
+      return `<block type="space_step">${nextXml}</block>`;
+    case 'SPACE_MOVE':
+      return `<block type="space_move"><value name="DX">${valueToXml(op.dx)}</value>${nextXml}</block>`;
+    case 'SPACE_SHOOT':
+      return `<block type="space_shoot">${nextXml}</block>`;
     case 'SAY':
       return `<block type="looks_sayforsecs"><value name="MESSAGE">${valueToXml(op.text, true)}</value><value name="SECS">${valueToXml(op.seconds)}</value>${nextXml}</block>`;
     case 'SET_SIZE':

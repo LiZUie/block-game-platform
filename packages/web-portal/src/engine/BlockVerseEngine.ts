@@ -125,6 +125,52 @@ interface SnakeArcadeState {
   gameOverReason: string;
 }
 
+interface SpaceEnemy {
+  id: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  tier: 'normal' | 'elite'; // normal = 3 HP, elite = 5 HP
+  rewardPoints: number;
+  hitFlash: number;
+}
+
+interface SpaceBullet {
+  x: number;
+  y: number;
+  vy: number;
+  fromPlayer: boolean;
+}
+
+interface SpaceParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  color: string;
+}
+
+interface SpaceShooterState {
+  active: boolean;
+  shipX: number;
+  shipY: number;
+  lives: number;
+  maxLives: number;
+  invulnerableTimer: number;
+  shootCooldown: number;
+  fleetDir: number;
+  fleetSpeed: number;
+  wave: number;
+  enemies: SpaceEnemy[];
+  bullets: SpaceBullet[];
+  particles: SpaceParticle[];
+  gameOver: boolean;
+  gameOverReason: string;
+}
+
+
 
 export function playSynthSound(type: string) {
   try {
@@ -197,6 +243,7 @@ export class BlockVerseRuntime {
   private tetris: TetrisMatrixState | null = null;
   private flappy: FlappyArcadeState | null = null;
   private snake: SnakeArcadeState | null = null;
+  private space: SpaceShooterState | null = null;
   private onScoreSubmit?: (score: number) => void;
   private onStateUpdate?: (vars: Record<string, any>) => void;
   private onSpriteDragged?: (spriteId: string, newX: number, newY: number) => void;
@@ -341,6 +388,390 @@ export class BlockVerseRuntime {
       )
     );
   }
+
+  private hasSpaceBlocks(): boolean {
+    return (
+      this.project.title.toLowerCase().includes('space invaders') ||
+      this.project.sprites.some((sp) =>
+        sp.scripts.some((sc) => JSON.stringify(sc.ops).includes('SPACE_'))
+      )
+    );
+  }
+
+  private spawnEnemyWave(waveNum: number): SpaceEnemy[] {
+    const enemies: SpaceEnemy[] = [];
+    // Baris 1 (Atas): Alien Elite dengan 5 HP (Reward 100 poin)
+    for (let c = 0; c < 6; c++) {
+      enemies.push({
+        id: `alien_top_${c}`,
+        x: 75 + c * 64,
+        y: 62,
+        hp: 5,
+        maxHp: 5,
+        tier: 'elite',
+        rewardPoints: 100,
+        hitFlash: 0,
+      });
+    }
+    // Baris 2 (Bawah): Alien Normal dengan 3 HP (Reward 50 poin)
+    for (let c = 0; c < 6; c++) {
+      enemies.push({
+        id: `alien_bot_${c}`,
+        x: 75 + c * 64,
+        y: 112,
+        hp: 3,
+        maxHp: 3,
+        tier: 'normal',
+        rewardPoints: 50,
+        hitFlash: 0,
+      });
+    }
+    return enemies;
+  }
+
+  private initSpaceShooter() {
+    this.space = {
+      active: true,
+      shipX: 240,
+      shipY: 318,
+      lives: 3,
+      maxLives: 3,
+      invulnerableTimer: 0,
+      shootCooldown: 0,
+      fleetDir: 1,
+      fleetSpeed: 1.35,
+      wave: 1,
+      enemies: this.spawnEnemyWave(1),
+      bullets: [],
+      particles: [],
+      gameOver: false,
+      gameOverReason: '',
+    };
+    this.variables['score'] = 0;
+    this.variables['lives'] = 3;
+    this.variables['alien-count'] = 12;
+  }
+
+  private spawnExplosion(x: number, y: number, color: string, count: number = 12) {
+    if (!this.space) return;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+      const speed = 1.5 + Math.random() * 3.2;
+      this.space.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 18 + Math.floor(Math.random() * 10),
+        color,
+      });
+    }
+  }
+
+  private movePlayerShip(dx: number) {
+    if (!this.space || this.space.gameOver) return;
+    this.space.shipX = Math.max(30, Math.min(450, this.space.shipX + dx));
+
+    // Sinkronkan ke koordinat Sprite Inspector
+    const shipSprite = this.entities.find((e) => e.name === 'Player Ship' || e.id === 'sprite_player');
+    if (shipSprite) {
+      shipSprite.x = Math.round(this.space.shipX - 240);
+      shipSprite.y = Math.round(180 - this.space.shipY);
+    }
+  }
+
+  private firePlayerLaser() {
+    if (!this.space || this.space.gameOver) return;
+    if (this.space.shootCooldown > 0) return;
+
+    // Tembakkan peluru tepat dari koordinat X pesawat saat ini!
+    this.space.bullets.push({
+      x: this.space.shipX,
+      y: this.space.shipY - 18,
+      vy: -8.5,
+      fromPlayer: true,
+    });
+    this.space.shootCooldown = 10;
+    playSynthSound('laser');
+  }
+
+  private stepSpaceShooter() {
+    if (!this.space || this.space.gameOver) return;
+    const sp = this.space;
+
+    if (sp.shootCooldown > 0) sp.shootCooldown--;
+    if (sp.invulnerableTimer > 0) sp.invulnerableTimer--;
+
+    // Kontrol mulus saat tombol panah kiri/kanan/spasi ditahan
+    if (this.pressedKeys.has('arrowleft') || this.pressedKeys.has('a')) {
+      this.movePlayerShip(-6.5);
+    }
+    if (this.pressedKeys.has('arrowright') || this.pressedKeys.has('d')) {
+      this.movePlayerShip(6.5);
+    }
+
+    // 1. Gerakkan Formasi Alien Kiri-Kanan & Turun sedikit saat menyentuh tepi
+    let hitEdge = false;
+    for (const en of sp.enemies) {
+      en.x += sp.fleetDir * sp.fleetSpeed;
+      if (en.hitFlash > 0) en.hitFlash--;
+      if (en.x > 448 || en.x < 32) hitEdge = true;
+    }
+
+    if (hitEdge) {
+      sp.fleetDir *= -1;
+      for (const en of sp.enemies) {
+        en.y += 10;
+        // Jika musuh sudah turun menabrak pesawat kita
+        if (en.y >= sp.shipY - 22) {
+          sp.gameOver = true;
+          sp.gameOverReason = 'Invasi Alien Mencapai Pertahananmu!';
+          playSynthSound('hit');
+          if (this.onScoreSubmit) this.onScoreSubmit(Number(this.variables['score'] || 0));
+          this.stop();
+          return;
+        }
+      }
+    }
+
+    // 2. Musuh Menembak Balik ke Arah Pesawat Kita
+    if (sp.enemies.length > 0 && Math.random() < 0.032) {
+      const shooter = sp.enemies[Math.floor(Math.random() * sp.enemies.length)];
+      sp.bullets.push({
+        x: shooter.x,
+        y: shooter.y + 16,
+        vy: 4.4,
+        fromPlayer: false,
+      });
+    }
+
+    // 3. Update Semua Peluru (Laser Kita & Laser Musuh)
+    const remainingBullets: SpaceBullet[] = [];
+
+    for (const b of sp.bullets) {
+      b.y += b.vy;
+      if (b.y < -10 || b.y > 370) continue;
+
+      let bulletConsumed = false;
+
+      if (b.fromPlayer) {
+        // Cek apakah laser kita mengenai salah satu Alien
+        for (let i = sp.enemies.length - 1; i >= 0; i--) {
+          const en = sp.enemies[i];
+          if (Math.abs(b.x - en.x) < 22 && Math.abs(b.y - en.y) < 18) {
+            en.hp -= 1;
+            en.hitFlash = 5;
+            bulletConsumed = true;
+
+            if (en.hp <= 0) {
+              // Alien Hancur setelah terkena 3-5 tembakan -> Dapat Reward Poin Besar!
+              playSynthSound('coin');
+              this.spawnExplosion(en.x, en.y, en.tier === 'elite' ? '#c084fc' : '#38bdf8', 16);
+              this.variables['score'] = Number(this.variables['score'] || 0) + en.rewardPoints;
+              sp.enemies.splice(i, 1);
+              this.variables['alien-count'] = sp.enemies.length;
+            } else {
+              // Tembakan masuk (Hit Damage) -> +10 Poin
+              playSynthSound('jump');
+              this.spawnExplosion(b.x, b.y, '#fde047', 5);
+              this.variables['score'] = Number(this.variables['score'] || 0) + 10;
+            }
+            break;
+          }
+        }
+      } else {
+        // Cek apakah peluru merah Alien mengenai Pesawat Kita
+        if (
+          sp.invulnerableTimer === 0 &&
+          Math.abs(b.x - sp.shipX) < 20 &&
+          Math.abs(b.y - sp.shipY) < 16
+        ) {
+          bulletConsumed = true;
+          sp.lives -= 1;
+          sp.invulnerableTimer = 45; // Kebal sesaat (1.5 detik) setelah tertembak
+          this.variables['lives'] = sp.lives;
+          playSynthSound('hit');
+          this.spawnExplosion(sp.shipX, sp.shipY, '#f43f5e', 18);
+
+          // Jika sudah terkena 3 kali tembakan (lives == 0) -> Pesawat Hancur & Game Over!
+          if (sp.lives <= 0) {
+            sp.gameOver = true;
+            sp.gameOverReason = 'Pesawat Hancur Terkena 3 Tembakan Musuh!';
+            if (this.onScoreSubmit) this.onScoreSubmit(Number(this.variables['score'] || 0));
+            this.stop();
+            return;
+          }
+        }
+      }
+
+      if (!bulletConsumed) {
+        remainingBullets.push(b);
+      }
+    }
+
+    sp.bullets = remainingBullets;
+
+    // 4. Update Efek Partikel Ledakan
+    sp.particles.forEach((pt) => {
+      pt.x += pt.vx;
+      pt.y += pt.vy;
+      pt.life -= 1;
+    });
+    sp.particles = sp.particles.filter((pt) => pt.life > 0);
+
+    // 5. Jika seluruh musuh habis dihancurkan -> Munculkan Wave Baru + Bonus Poin!
+    if (sp.enemies.length === 0) {
+      playSynthSound('win');
+      sp.wave += 1;
+      sp.fleetSpeed = Math.min(2.6, sp.fleetSpeed + 0.25);
+      this.variables['score'] = Number(this.variables['score'] || 0) + 200;
+      sp.enemies = this.spawnEnemyWave(sp.wave);
+      this.variables['alien-count'] = sp.enemies.length;
+    }
+  }
+
+  private renderSpaceShooter() {
+    if (!this.space) return;
+    const { ctx } = this;
+    const sp = this.space;
+
+    // 1. Gambar Indikator Nyawa Pesawat (❤️❤️❤️) & Wave di Kanan Atas Stage
+    ctx.save();
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(338, 12, 130, 32, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillStyle = '#f8fafc';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const hearts = '❤️'.repeat(Math.max(0, sp.lives)) + '🖤'.repeat(Math.max(0, sp.maxLives - sp.lives));
+    ctx.fillText(`HP: ${hearts}`, 348, 28);
+    ctx.restore();
+
+    // 2. Gambar Semua Musuh Alien + Health Bar (3-5 Hit) di Atas Kepalanya
+    for (const en of sp.enemies) {
+      ctx.save();
+      ctx.translate(en.x, en.y);
+
+      // Health Bar Background
+      const barW = 34;
+      const barH = 5;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.fillRect(-barW / 2, -26, barW, barH);
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-barW / 2, -26, barW, barH);
+
+      // Health Bar Fill (Hijau -> Kuning -> Merah sesuai sisa HP)
+      const hpRatio = Math.max(0, en.hp / en.maxHp);
+      ctx.fillStyle = hpRatio > 0.6 ? '#22c55e' : hpRatio > 0.3 ? '#eab308' : '#ef4444';
+      ctx.fillRect(-barW / 2 + 1, -25, (barW - 2) * hpRatio, barH - 2);
+
+      // Efek Kedip Putih saat terkena tembakan
+      if (en.hitFlash > 0) {
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 12;
+      }
+
+      // Gambar Karakter Alien
+      ctx.font = en.tier === 'elite' ? '30px sans-serif' : '26px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(en.tier === 'elite' ? '👾' : '👽', 0, 0);
+      ctx.restore();
+    }
+
+    // 3. Gambar Pesawat Tempur Player (Berkedip jika baru saja terkena tembakan)
+    if (!sp.gameOver && sp.invulnerableTimer % 4 < 2) {
+      ctx.save();
+      ctx.translate(sp.shipX, sp.shipY);
+
+      // Efek Api Pendorong Mesin (Thruster Flame)
+      ctx.fillStyle = '#f97316';
+      ctx.beginPath();
+      ctx.moveTo(-6, 14);
+      ctx.lineTo(0, 24 + Math.random() * 5);
+      ctx.lineTo(6, 14);
+      ctx.closePath();
+      ctx.fill();
+
+      // Sayap Pesawat Tempur
+      ctx.fillStyle = '#0284c7';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -18);
+      ctx.lineTo(22, 14);
+      ctx.lineTo(8, 10);
+      ctx.lineTo(-8, 10);
+      ctx.lineTo(-22, 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Kokpit Tengah & Meriam Laser
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.ellipse(0, -2, 5, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 4. Gambar Peluru Laser Biru (Player) & Plasma Merah (Musuh)
+    for (const b of sp.bullets) {
+      ctx.save();
+      if (b.fromPlayer) {
+        ctx.fillStyle = '#38bdf8';
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 8;
+        ctx.fillRect(b.x - 2.5, b.y - 8, 5, 16);
+      } else {
+        ctx.fillStyle = '#f43f5e';
+        ctx.shadowColor = '#f43f5e';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // 5. Gambar Partikel Ledakan
+    for (const pt of sp.particles) {
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+    }
+
+    // 6. Overlay Game Over
+    if (sp.gameOver) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.beginPath();
+      ctx.roundRect(95, 110, 290, 118, 14);
+      ctx.fill();
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#f43f5e';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', 240, 142);
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(sp.gameOverReason, 240, 168);
+
+      ctx.fillStyle = '#facc15';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(`Total Reward Score: ${this.variables['score'] || 0}`, 240, 195);
+    }
+  }
+
 
   private initSnakeArcade() {
     const gridSize = 20;
@@ -737,18 +1168,27 @@ export class BlockVerseRuntime {
       this.initTetrisMatrix();
       this.flappy = null;
       this.snake = null;
+      this.space = null;
     } else if (this.hasFlappyBlocks()) {
       this.initFlappyArcade();
       this.tetris = null;
       this.snake = null;
+      this.space = null;
     } else if (this.hasSnakeBlocks()) {
       this.initSnakeArcade();
       this.tetris = null;
       this.flappy = null;
+      this.space = null;
+    } else if (this.hasSpaceBlocks()) {
+      this.initSpaceShooter();
+      this.tetris = null;
+      this.flappy = null;
+      this.snake = null;
     } else {
       this.tetris = null;
       this.flappy = null;
       this.snake = null;
+      this.space = null;
     }
   }
 
@@ -970,6 +1410,18 @@ export class BlockVerseRuntime {
             this.setSnakeDirection(op.dir || 'RIGHT');
             break;
 
+          // ================== EKSEKUSI BLOK SPACE SHOOTER ==================
+          case 'SPACE_STEP':
+            this.stepSpaceShooter();
+            yielded = true;
+            break;
+          case 'SPACE_MOVE':
+            this.movePlayerShip(Number(this.evaluateValue(op.dx, thread.entity)));
+            break;
+          case 'SPACE_SHOOT':
+            this.firePlayerLaser();
+            break;
+
           // ================== EKSEKUSI BLOK MATRIX TETRIS ==================
           case 'TETRIS_STEP': {
             if (!this.tetris || this.tetris.gameOver) break;
@@ -1114,8 +1566,9 @@ export class BlockVerseRuntime {
               const clone: RuntimeEntity = {
                 ...JSON.parse(JSON.stringify(template)),
                 id: `clone_${Math.random().toString(36).substring(2, 9)}`,
-                x: template === thread.entity ? thread.entity.x : template.x,
-                y: template === thread.entity ? thread.entity.y : template.y,
+                // PERBAIKAN PENTING: Selalu mulai dari koordinat (x, y) sprite yang memanggil clone!
+                x: thread.entity.x,
+                y: thread.entity.y,
                 isClone: true,
                 parentId: template.id,
                 localVars: { isClone: 'true' },
@@ -1763,6 +2216,8 @@ export class BlockVerseRuntime {
       this.renderFlappyArcade();
     } else if (this.snake && this.snake.active) {
       this.renderSnakeArcade();
+    } else if (this.space && this.space.active) {
+      this.renderSpaceShooter();
     } else {
       for (const entity of this.entities) {
         if (!entity.visible) continue;
@@ -2285,14 +2740,18 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
   title: 'Space Invaders',
   stageBackdrop: '#05070d',
   stagePattern: 'stars',
-  variables: { score: 0, 'alien-count': 0, 'march-steps': 5 },
-  broadcasts: ['alien_hit', 'march', 'game over'],
+  variables: {
+    score: 0,
+    lives: 3,
+    'alien-count': 12,
+  },
+  broadcasts: ['alien_hit', 'game over'],
   sprites: [
     {
       id: 'sprite_player',
       name: 'Player Ship',
       x: 0,
-      y: -145,
+      y: -138,
       size: 100,
       direction: 90,
       visible: true,
@@ -2302,24 +2761,29 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
         {
           trigger: 'WHEN_FLAG_CLICKED',
           ops: [
-            { op: 'GOTO_XY', x: 0, y: -145 },
             { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'SET_VAR', varName: 'lives', value: 3 },
+            { op: 'SET_VAR', varName: 'alien-count', value: 12 },
             {
               op: 'FOREVER',
-              substack: [
-                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -7 }] },
-                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 7 }] },
-              ],
+              substack: [{ op: 'SPACE_STEP' }],
             },
           ],
         },
         {
           trigger: 'WHEN_KEY_PRESSED',
           param: 'space',
-          ops: [
-            { op: 'PLAY_SOUND', sound: 'laser' },
-            { op: 'CREATE_CLONE', target: 'laser' },
-          ],
+          ops: [{ op: 'SPACE_SHOOT' }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowleft',
+          ops: [{ op: 'SPACE_MOVE', dx: -14 }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowright',
+          ops: [{ op: 'SPACE_MOVE', dx: 14 }],
         },
       ],
     },
@@ -2327,80 +2791,25 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
       id: 'sprite_laser',
       name: 'laser',
       x: 0,
-      y: -135,
+      y: -120,
       size: 80,
       direction: 90,
       visible: false,
       rotationStyle: 'dont-rotate',
       costumeEmoji: '⚡',
-      scripts: [
-        { trigger: 'WHEN_FLAG_CLICKED', ops: [{ op: 'HIDE' }] },
-        {
-          trigger: 'WHEN_CLONE_START',
-          ops: [
-            { op: 'SHOW' },
-            {
-              op: 'REPEAT',
-              times: 32,
-              substack: [
-                { op: 'CHANGE_Y', dy: 10 },
-                {
-                  op: 'IF',
-                  condition: { type: 'TOUCHING', target: 'alien' },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'hit' },
-                    { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
-                    { op: 'DELETE_CLONE' },
-                  ],
-                },
-              ],
-            },
-            { op: 'DELETE_CLONE' },
-          ],
-        },
-      ],
+      scripts: [],
     },
     {
       id: 'sprite_alien',
       name: 'alien',
-      x: -150,
-      y: 120,
-      size: 80,
+      x: 0,
+      y: 110,
+      size: 85,
       direction: 90,
       visible: true,
       rotationStyle: 'left-right',
       costumeEmoji: '👾',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [
-            { op: 'GOTO_XY', x: -150, y: 120 },
-            { op: 'SHOW' },
-            {
-              op: 'REPEAT',
-              times: 6,
-              substack: [
-                { op: 'CREATE_CLONE', target: 'alien' },
-                { op: 'CHANGE_X', dx: 50 },
-              ],
-            },
-            { op: 'HIDE' },
-          ],
-        },
-        {
-          trigger: 'WHEN_CLONE_START',
-          ops: [
-            { op: 'SHOW' },
-            {
-              op: 'FOREVER',
-              substack: [
-                { op: 'MOVE_STEPS', steps: 4 },
-                { op: 'IF_ON_EDGE_BOUNCE' },
-              ],
-            },
-          ],
-        },
-      ],
+      scripts: [],
     },
   ],
 };
