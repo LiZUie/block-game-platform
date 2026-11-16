@@ -40,6 +40,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const handleQuickLogin = async (demoId: string, demoPw: string) => {
+    setIdentifier(demoId);
+    setPassword(demoPw);
+    setErrorMsg(null);
+    try {
+      setLoading(true);
+      const user = await login(demoId, demoPw);
+      onLoginSuccess(user);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Login gagal, periksa kembali username/password Anda.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !email || !password) {
@@ -172,39 +187,58 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               </button>
 
               <div className="pt-2 border-t border-slate-800/80">
-                <p className="text-[11px] font-semibold text-slate-400 mb-2">Akun Demo Bawaan (Klik untuk isi cepat):</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[11px] font-semibold text-slate-300">⚡ Akun Demo Bawaan:</p>
+                  <span className="text-[10px] text-indigo-400 font-medium">Klik untuk 1-Klik Masuk Langsung</span>
+                </div>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <button
                     type="button"
-                    onClick={() => { setIdentifier('dev'); setPassword('dev123'); setErrorMsg(null); }}
-                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                    disabled={loading}
+                    onClick={() => handleQuickLogin('dev', 'dev123')}
+                    className="p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-950/40 border border-slate-800 hover:border-indigo-500/50 text-left transition disabled:opacity-50 group"
                   >
-                    <span className="font-bold text-indigo-400 block">Developer</span>
-                    <span className="text-[10px] text-slate-500 font-mono">dev / dev123</span>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-bold text-indigo-400 group-hover:text-indigo-300">🛠️ Developer</span>
+                      <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-mono">1-Klik</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono block">dev / dev123</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setIdentifier('player'); setPassword('player123'); setErrorMsg(null); }}
-                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                    disabled={loading}
+                    onClick={() => handleQuickLogin('player', 'player123')}
+                    className="p-2.5 rounded-xl bg-slate-950 hover:bg-emerald-950/40 border border-slate-800 hover:border-emerald-500/50 text-left transition disabled:opacity-50 group"
                   >
-                    <span className="font-bold text-emerald-400 block">Player</span>
-                    <span className="text-[10px] text-slate-500 font-mono">player / player123</span>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-bold text-emerald-400 group-hover:text-emerald-300">🎮 Player</span>
+                      <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-mono">1-Klik</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono block">player / player123</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setIdentifier('admin'); setPassword('admin123'); setErrorMsg(null); }}
-                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                    disabled={loading}
+                    onClick={() => handleQuickLogin('admin', 'admin123')}
+                    className="p-2.5 rounded-xl bg-slate-950 hover:bg-amber-950/40 border border-slate-800 hover:border-amber-500/50 text-left transition disabled:opacity-50 group"
                   >
-                    <span className="font-bold text-amber-400 block">Admin</span>
-                    <span className="text-[10px] text-slate-500 font-mono">admin / admin123</span>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-bold text-amber-400 group-hover:text-amber-300">🛡️ Admin</span>
+                      <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-mono">1-Klik</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono block">admin / admin123</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setIdentifier('calon_dev'); setPassword('pending123'); setErrorMsg(null); }}
-                    className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-left transition"
+                    disabled={loading}
+                    onClick={() => handleQuickLogin('calon_dev', 'pending123')}
+                    className="p-2.5 rounded-xl bg-slate-950 hover:bg-rose-950/40 border border-slate-800 hover:border-rose-500/50 text-left transition disabled:opacity-50 group"
                   >
-                    <span className="font-bold text-rose-400 block">Dev Pending</span>
-                    <span className="text-[10px] text-slate-500 font-mono">calon_dev / pending123</span>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-bold text-rose-400 group-hover:text-rose-300">⏳ Dev Pending</span>
+                      <span className="text-[9px] bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded font-mono">1-Klik</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono block">calon_dev / pending123</span>
                   </button>
                 </div>
               </div>

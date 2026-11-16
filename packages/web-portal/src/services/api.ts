@@ -161,10 +161,15 @@ export const api = {
         return data;
       }
 
-      const err = await res.json().catch(() => ({ error: 'Username/Email atau password salah' }));
-      throw new Error(err.error || 'Username/Email atau password salah');
+      // Jika endpoint backend belum dideploy / Vercel static hosting (404/405/5xx), aktifkan fallback mock user
+      if (res.status === 404 || res.status === 405 || res.status >= 500) {
+        networkError = true;
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Username/Email atau password salah' }));
+        throw new Error(err.error || 'Username/Email atau password salah');
+      }
     } catch (e: any) {
-      if (e.message && e.message !== 'Failed to fetch' && !e.message.includes('NetworkError') && !e.message.includes('Load failed')) {
+      if (!networkError && e.message && e.message !== 'Failed to fetch' && !e.message.includes('NetworkError') && !e.message.includes('Load failed')) {
         throw e;
       }
       networkError = true;
@@ -221,10 +226,15 @@ export const api = {
         return data;
       }
 
-      const err = await res.json().catch(() => ({ error: 'Pendaftaran gagal' }));
-      throw new Error(err.error || 'Pendaftaran gagal');
+      // Jika endpoint backend belum dideploy / Vercel static hosting (404/405/5xx), aktifkan fallback mock user
+      if (res.status === 404 || res.status === 405 || res.status >= 500) {
+        networkError = true;
+      } else {
+        const err = await res.json().catch(() => ({ error: 'Pendaftaran gagal' }));
+        throw new Error(err.error || 'Pendaftaran gagal');
+      }
     } catch (e: any) {
-      if (e.message && e.message !== 'Failed to fetch' && !e.message.includes('NetworkError') && !e.message.includes('Load failed')) {
+      if (!networkError && e.message && e.message !== 'Failed to fetch' && !e.message.includes('NetworkError') && !e.message.includes('Load failed')) {
         throw e;
       }
       networkError = true;
