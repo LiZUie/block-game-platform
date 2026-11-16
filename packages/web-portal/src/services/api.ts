@@ -129,25 +129,37 @@ function getStoredMockGames(): StoredGameSummary[] {
 
 function getStoredMockUsers(): StoredMockUser[] {
   const raw = localStorage.getItem(MOCK_USERS_KEY);
-  if (!raw) {
-    localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(DEFAULT_MOCK_USERS));
-    return [...DEFAULT_MOCK_USERS];
+  let users: StoredMockUser[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        users = parsed;
+      }
+    } catch {}
   }
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(DEFAULT_MOCK_USERS));
-      return [...DEFAULT_MOCK_USERS];
+
+  // Pastikan seluruh akun demo bawaan (admin, dev, player, calon_dev) selalu ada dan kata sandinya valid
+  for (const def of DEFAULT_MOCK_USERS) {
+    const existingIndex = users.findIndex(
+      (u) => u.username.toLowerCase() === def.username.toLowerCase() || u.email.toLowerCase() === def.email.toLowerCase()
+    );
+    if (existingIndex === -1) {
+      users.push({ ...def });
+    } else {
+      users[existingIndex].password = def.password;
     }
-    return parsed;
-  } catch {
-    return [...DEFAULT_MOCK_USERS];
   }
+
+  localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(users));
+  return users;
 }
 
 export const api = {
   async login(usernameOrEmail: string, password: string): Promise<{ token: string; user: UserProfile }> {
     let networkError = false;
+    let serverErrorMsg: string | null = null;
+
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
@@ -155,23 +167,24 @@ export const api = {
         body: JSON.stringify({ username: usernameOrEmail, email: usernameOrEmail, password }),
       });
 
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+
+      if (res.ok && isJson) {
         const data = await res.json();
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data.user));
         return data;
       }
 
-      // Jika endpoint backend belum dideploy / Vercel static hosting (404/405/5xx), aktifkan fallback mock user
-      if (res.status === 404 || res.status === 405 || res.status >= 500) {
+      // Jika response HTML (Vercel SPA rewrite), 404, 405, atau 5xx, backend API offline / tidak tersedia
+      if (!isJson || res.status === 404 || res.status === 405 || res.status >= 500) {
         networkError = true;
       } else {
-        const err = await res.json().catch(() => ({ error: 'Username/Email atau password salah' }));
-        throw new Error(err.error || 'Username/Email atau password salah');
+        const err = await res.json().catch(() => null);
+        serverErrorMsg = err?.error || null;
+        networkError = true;
       }
-    } catch (e: any) {
-      if (!networkError && e.message && e.message !== 'Failed to fetch' && !e.message.includes('NetworkError') && !e.message.includes('Load failed')) {
-        throw e;
-      }
+    } catch {
       networkError = true;
     }
 
@@ -186,7 +199,7 @@ export const api = {
       );
 
       if (!matched) {
-        throw new Error('Akun tidak ditemukan. Periksa kembali username/email atau daftar akun baru.');
+        throw new Error(serverErrorMsg || 'Akun tidak ditemukan. Periksa kembali username/email atau daftar akun baru.');
       }
       if (matched.password && matched.password !== password) {
         throw new Error('Kata sandi (password) salah. Silakan coba lagi.');
@@ -208,11 +221,13 @@ export const api = {
       };
     }
 
-    throw new Error('Username/Email atau password salah');
+    throw new Error(serverErrorMsg || 'Username/Email atau password salah');
   },
 
   async register(username: string, email: string, password: string, role: UserRole): Promise<{ token: string; user: UserProfile }> {
     let networkError = false;
+    let serverErrorMsg: string | null = null;
+
     try {
       const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
@@ -220,23 +235,24 @@ export const api = {
         body: JSON.stringify({ username, email, password, role }),
       });
 
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+
+      if (res.ok && isJson) {
         const data = await res.json();
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data.user));
         return data;
       }
 
-      // Jika endpoint backend belum dideploy / Vercel static hosting (404/405/5xx), aktifkan fallback mock user
-      if (res.status === 404 || res.status === 405 || res.status >= 500) {
+      // Jika response HTML (Vercel SPA rewrite), 404, 405, atau 5xx, backend API offline / tidak tersedia
+      if (!isJson || res.status === 404 || res.status === 405 || res.status >= 500) {
         networkError = true;
       } else {
-        const err = await res.json().catch(() => ({ error: 'Pendaftaran gagal' }));
-        throw new Error(err.error || 'Pendaftaran gagal');
+        const err = await res.json().catch(() => null);
+        serverErrorMsg = err?.error || null;
+        networkError = true;
       }
-    } catch (e: any) {
-      if (!networkError && e.message && e.message !== 'Failed to fetch' && !e.message.includes('NetworkError') && !e.message.includes('Load failed')) {
-        throw e;
-      }
+    } catch {
       networkError = true;
     }
 
@@ -282,7 +298,7 @@ export const api = {
       };
     }
 
-    throw new Error('Pendaftaran gagal');
+    throw new Error(serverErrorMsg || 'Pendaftaran gagal');
   },
 
   async getMe(): Promise<{ user: UserProfile }> {
@@ -290,7 +306,8 @@ export const api = {
       const res = await fetch(`${API_BASE}/auth/me`, {
         headers: { ...getAuthHeader() },
       });
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     const cached = localStorage.getItem(CURRENT_USER_KEY);
@@ -321,7 +338,8 @@ export const api = {
   async getGames(publishedOnly = true): Promise<{ games: StoredGameSummary[] }> {
     try {
       const res = await fetch(`${API_BASE}/games?publishedOnly=${publishedOnly}`);
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     return { games: getStoredMockGames() };
@@ -330,7 +348,8 @@ export const api = {
   async getGameManifest(gameId: string): Promise<GameManifest & { projectData?: any }> {
     try {
       const res = await fetch(`${API_BASE}/games/${gameId}/manifest`);
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     // Cari di daftar mock games jika ada projectData tersimpan
@@ -380,7 +399,8 @@ export const api = {
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) {
         const data = await res.json();
         if (data.gameId && payload.projectData) {
           localStorage.setItem(`blockverse_project_${data.gameId}`, JSON.stringify(payload.projectData));
@@ -449,7 +469,8 @@ export const api = {
         },
         body: JSON.stringify({ score }),
       });
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     return { message: 'Skor berhasil dicatat!' };
@@ -458,7 +479,8 @@ export const api = {
   async getLeaderboard(gameId: string): Promise<{ leaderboard: LeaderboardEntry[] }> {
     try {
       const res = await fetch(`${API_BASE}/games/${gameId}/scores`);
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     return {
@@ -475,7 +497,8 @@ export const api = {
       const res = await fetch(`${API_BASE}/admin/metrics`, {
         headers: { ...getAuthHeader() },
       });
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     const games = getStoredMockGames();
@@ -509,7 +532,8 @@ export const api = {
       const res = await fetch(`${API_BASE}/admin/users`, {
         headers: { ...getAuthHeader() },
       });
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     return { users: getStoredMockUsers() };
@@ -537,7 +561,8 @@ export const api = {
       const res = await fetch(`${API_BASE}/admin/pending-developers`, {
         headers: { ...getAuthHeader() },
       });
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     const users = getStoredMockUsers().filter((u) => u.role === UserRole.DEVELOPER && u.status === 'PENDING');
@@ -550,7 +575,8 @@ export const api = {
         method: 'POST',
         headers: { ...getAuthHeader() },
       });
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     const users = getStoredMockUsers().map((u) => (u.id === userId ? { ...u, status: 'ACTIVE' as const } : u));
@@ -564,7 +590,8 @@ export const api = {
         method: 'POST',
         headers: { ...getAuthHeader() },
       });
-      if (res.ok) return res.json();
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      if (res.ok && isJson) return res.json();
     } catch {}
 
     const users = getStoredMockUsers().map((u) => (u.id === userId ? { ...u, status: 'REJECTED' as const } : u));
