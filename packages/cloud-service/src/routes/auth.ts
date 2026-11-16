@@ -17,9 +17,13 @@ router.post('/login', (req: Request, res: Response) => {
 
   const stmt = db.prepare(`
     SELECT * FROM users 
-    WHERE email = ? OR username = ? OR (username = 'CloudAdmin' AND LOWER(?) = 'admin')
+    WHERE email = ? 
+       OR username = ? 
+       OR (username = 'CloudAdmin' AND LOWER(?) = 'admin')
+       OR (username = 'RetroCoder' AND LOWER(?) = 'dev')
+       OR (username = 'PixelGamer' AND LOWER(?) = 'player')
   `);
-  const user = stmt.get(loginIdentifier, loginIdentifier, loginIdentifier) as any;
+  const user = stmt.get(loginIdentifier, loginIdentifier, loginIdentifier, loginIdentifier, loginIdentifier) as any;
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Username/Email atau password salah' });
