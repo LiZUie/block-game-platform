@@ -32,8 +32,8 @@ export interface BlockVerseProject {
   title: string;
   stageBackdrop: string;
   stagePattern?: 'none' | 'stars' | 'grid' | 'sky' | 'dungeon' | 'neon' | 'desert' | 'ocean' | 'arena';
-  stageImageUrl?: string; // Mendukung upload gambar background bebas (JPG/PNG/SVG)
-  showStageGrid?: boolean; // Menampilkan garis bantu koordinat X/Y Scratch
+  stageImageUrl?: string;
+  showStageGrid?: boolean;
   variables: Record<string, number | string | boolean>;
   broadcasts: string[];
   sprites: SpriteTarget[];
@@ -91,6 +91,25 @@ interface TetrisMatrixState {
   gameOver: boolean;
 }
 
+interface FlappyPipePair {
+  x: number;         // Koordinat layar Canvas (0..480)
+  gapY: number;      // Titik tengah celah pipa (75..215)
+  gapHeight: number; // Lebar celah vertikal (96px)
+  passed: boolean;
+}
+
+interface FlappyArcadeState {
+  active: boolean;
+  birdX: number;     // Posisi layar X (120)
+  birdY: number;     // Posisi layar Y (0 di atas, 285 di tanah)
+  birdVy: number;    // Kecepatan jatuh/lompat
+  birdRotation: number;
+  wingFrame: number;
+  groundScroll: number;
+  pipes: FlappyPipePair[];
+  gameOver: boolean;
+}
+
 export function playSynthSound(type: string) {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -110,13 +129,13 @@ export function playSynthSound(type: string) {
       osc.start(now);
       osc.stop(now + 0.3);
     } else if (type === 'jump') {
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(180, now);
-      osc.frequency.exponentialRampToValueAtTime(520, now + 0.18);
-      gain.gain.setValueAtTime(0.12, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(280, now);
+      osc.frequency.exponentialRampToValueAtTime(580, now + 0.14);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
       osc.start(now);
-      osc.stop(now + 0.2);
+      osc.stop(now + 0.16);
     } else if (type === 'laser') {
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(880, now);
@@ -160,6 +179,7 @@ export class BlockVerseRuntime {
   private isRunning: boolean = false;
   private rafId: number | null = null;
   private tetris: TetrisMatrixState | null = null;
+  private flappy: FlappyArcadeState | null = null;
   private onScoreSubmit?: (score: number) => void;
   private onStateUpdate?: (vars: Record<string, any>) => void;
   private onSpriteDragged?: (spriteId: string, newX: number, newY: number) => void;
@@ -213,6 +233,12 @@ export class BlockVerseRuntime {
   };
 
   private handleMouseDown = () => {
+    // Jika mode Flappy Bird sedang berjalan, klik mouse di layar juga mengepakkan sayap!
+    if (this.isRunning && this.flappy && this.flappy.active && !this.flappy.gameOver) {
+      this.flapBirdUpward();
+      return;
+    }
+
     for (let i = this.entities.length - 1; i >= 0; i--) {
       const ent = this.entities[i];
       if (!ent.visible || ent.isClone) continue;
@@ -249,7 +275,6 @@ export class BlockVerseRuntime {
     const wasPressed = this.pressedKeys.has(key);
     this.pressedKeys.add(key);
 
-    // Untuk Tetris, izinkan tombol panah kiri/kanan/bawah berulang saat ditahan
     const allowRepeat = this.tetris?.active && ['arrowleft', 'arrowright', 'arrowdown'].includes(key);
 
     if (this.isRunning && (!wasPressed || allowRepeat)) {
@@ -277,12 +302,115 @@ export class BlockVerseRuntime {
 
   private hasTetrisBlocks(): boolean {
     return this.project.sprites.some((sp) =>
-      sp.scripts.some((sc) =>
-        JSON.stringify(sc.ops).includes('TETRIS_')
+      sp.scripts.some((sc) => JSON.stringify(sc.ops).includes('TETRIS_'))
+    );
+  }
+
+  private hasFlappyBlocks(): boolean {
+    return (
+      this.project.title.toLowerCase().includes('flappy') ||
+      this.project.sprites.some((sp) =>
+        sp.scripts.some((sc) => JSON.stringify(sc.ops).includes('FLAPPY_'))
       )
     );
   }
 
+  // ================== INISIALISASI & LOGIKA FLAPPY BIRD ASLI ==================
+  private initFlappyArcade() {
+    this.flappy = {
+      active: true,
+      birdX: 125,
+      birdY: 140,
+      birdVy: 0,
+      birdRotation: 0,
+      wingFrame: 0,
+      groundScroll: 0,
+      pipes: [
+        { x: 340, gapY: 135, gapHeight: 98, passed: false },
+        { x: 540, gapY: 175, gapHeight: 98, passed: false },
+      ],
+      gameOver: false,
+    };
+  }
+
+  private flapBirdUpward() {
+    if (!this.flappy || this.flappy.gameOver) return;
+    this.flappy.birdVy = -6.8;
+    this.flappy.wingFrame = 6;
+    playSynthSound('jump');
+  }
+
+  private stepFlappyArcade() {
+    if (!this.flappy || this.flappy.gameOver) return;
+    const f = this.flappy;
+
+    // 1. Gravitasi & Pergerakan Vertikal Burung
+    f.birdVy = Math.min(8.5, f.birdVy + 0.38);
+    f.birdY += f.birdVy;
+    f.birdRotation = Math.max(-0.45, Math.min(1.1, f.birdVy * 0.08));
+    if (f.wingFrame > 0) f.wingFrame--;
+    f.groundScroll = (f.groundScroll + 3.2) % 24;
+
+    // Sinkronkan ke koordinat sprite Flappy agar Inspector x/y tetap hidup
+    const birdEntity = this.entities.find((e) => e.name.toLowerCase().includes('flappy') || e.id === 'sprite_bird');
+    if (birdEntity) {
+      birdEntity.x = Math.round(f.birdX - 240);
+      birdEntity.y = Math.round(180 - f.birdY);
+    }
+
+    // 2. Gerakkan Sepasang Pipa Hijau Atas & Bawah
+    const pipeWidth = 52;
+    const birdRadius = 14;
+
+    for (const pipe of f.pipes) {
+      pipe.x -= 3.2;
+
+      const topPipeBottom = pipe.gapY - pipe.gapHeight / 2;
+      const bottomPipeTop = pipe.gapY + pipe.gapHeight / 2;
+
+      // Deteksi Tabrakan Presisi dengan Pipa Atas atau Pipa Bawah
+      const withinPipeX = f.birdX + birdRadius > pipe.x && f.birdX - birdRadius < pipe.x + pipeWidth;
+      const hitTopPipe = f.birdY - birdRadius < topPipeBottom;
+      const hitBottomPipe = f.birdY + birdRadius > bottomPipeTop;
+
+      if (withinPipeX && (hitTopPipe || hitBottomPipe)) {
+        this.triggerFlappyGameOver();
+        return;
+      }
+
+      // Tambah Skor +10 saat berhasil melewati celah pipa
+      if (!pipe.passed && pipe.x + pipeWidth < f.birdX) {
+        pipe.passed = true;
+        playSynthSound('coin');
+        this.variables['score'] = Number(this.variables['score'] || 0) + 10;
+      }
+
+      // Daur ulang pipa yang sudah lewat batas kiri layar ke sebelah kanan
+      if (pipe.x < -60) {
+        pipe.x = 480 + 60;
+        pipe.gapY = Math.floor(Math.random() * 120) + 80; // Celah acak antara Y=80 s/d Y=200
+        pipe.passed = false;
+      }
+    }
+
+    // 3. Deteksi Tabrakan dengan Tanah (Y >= 278) atau Atap Langit
+    if (f.birdY + birdRadius >= 278 || f.birdY - birdRadius <= 0) {
+      f.birdY = Math.min(278 - birdRadius, Math.max(birdRadius, f.birdY));
+      this.triggerFlappyGameOver();
+    }
+  }
+
+  private triggerFlappyGameOver() {
+    if (!this.flappy || this.flappy.gameOver) return;
+    this.flappy.gameOver = true;
+    playSynthSound('hit');
+    if (this.onScoreSubmit) {
+      this.onScoreSubmit(Number(this.variables['score'] || 0));
+    }
+    this.stop();
+  }
+
+  // ================== INISIALISASI & LOGIKA MATRIX TETRIS ==================
   private randomTetromino() {
     const pick = TETROMINO_SHAPES[Math.floor(Math.random() * TETROMINO_SHAPES.length)];
     return {
@@ -333,7 +461,6 @@ export class BlockVerseRuntime {
     if (!this.tetris) return;
     const { board, currentPiece, cols, rows } = this.tetris;
 
-    // 1. Kunci balok aktif ke papan tumpukan
     for (let r = 0; r < currentPiece.matrix.length; r++) {
       for (let c = 0; c < currentPiece.matrix[r].length; c++) {
         if (currentPiece.matrix[r][c]) {
@@ -346,14 +473,13 @@ export class BlockVerseRuntime {
       }
     }
 
-    // 2. Cek dan hapus semua baris yang penuh dari kiri ke kanan
     let clearedCount = 0;
     for (let r = rows - 1; r >= 0; r--) {
       if (board[r].every((cell) => cell !== null)) {
         board.splice(r, 1);
         board.unshift(Array(cols).fill(null));
         clearedCount++;
-        r++; // Periksa lagi indeks baris yang baru turun
+        r++;
       }
     }
 
@@ -367,7 +493,6 @@ export class BlockVerseRuntime {
       this.variables['score'] = Number(this.variables['score'] || 0) + 5;
     }
 
-    // 3. Munculkan balok berikutnya dari atas
     const next = this.tetris.nextPiece;
     const spawnCol = Math.floor((cols - next.matrix[0].length) / 2);
     this.tetris.currentPiece = {
@@ -377,18 +502,12 @@ export class BlockVerseRuntime {
     };
     this.tetris.nextPiece = this.randomTetromino();
 
-    // 4. Jika balok baru langsung menabrak tumpukan di paling atas -> Game Over!
     if (!this.canMoveTetromino(this.tetris.currentPiece.matrix, spawnCol, 0)) {
       this.tetris.gameOver = true;
       playSynthSound('hit');
       if (this.onScoreSubmit) {
         this.onScoreSubmit(Number(this.variables['score'] || 0));
       }
-      this.entities.forEach((entity) => {
-        entity.scripts
-          .filter((s) => s.trigger === 'WHEN_RECEIVE' && s.param === 'game over')
-          .forEach((s) => this.spawnThread(entity, JSON.parse(JSON.stringify(s.ops))));
-      });
       this.stop();
     }
   }
@@ -405,8 +524,13 @@ export class BlockVerseRuntime {
 
     if (this.hasTetrisBlocks()) {
       this.initTetrisMatrix();
+      this.flappy = null;
+    } else if (this.hasFlappyBlocks()) {
+      this.initFlappyArcade();
+      this.tetris = null;
     } else {
       this.tetris = null;
+      this.flappy = null;
     }
   }
 
@@ -611,6 +735,15 @@ export class BlockVerseRuntime {
             }
             break;
 
+          // ================== EKSEKUSI BLOK FLAPPY BIRD ASLI ==================
+          case 'FLAPPY_STEP':
+            this.stepFlappyArcade();
+            yielded = true;
+            break;
+          case 'FLAPPY_FLAP':
+            this.flapBirdUpward();
+            break;
+
           // ================== EKSEKUSI BLOK MATRIX TETRIS ==================
           case 'TETRIS_STEP': {
             if (!this.tetris || this.tetris.gameOver) break;
@@ -636,7 +769,6 @@ export class BlockVerseRuntime {
             const p = this.tetris.currentPiece;
             const m = p.matrix;
             const rotated = m[0].map((_, index) => m.map((row) => row[index]).reverse());
-            // Wall-kick sederhana jika berputar di dekat tepi dinding
             if (this.canMoveTetromino(rotated, p.col, p.row)) {
               p.matrix = rotated;
               playSynthSound('jump');
@@ -667,8 +799,13 @@ export class BlockVerseRuntime {
             thread.entity.sayText = text;
             if (secs > 0) {
               thread.entity.sayExpireTime = now + secs * 1000;
-              thread.waitUntilTime = now + secs * 1000;
-              yielded = true;
+              // Jangan mem-block thread jika di baris berikutnya langsung STOP_ALL (agar Game Over instan)
+              const nextOp = frame.ops[frame.pc];
+              const afterNextOp = frame.ops[frame.pc + 1];
+              if (nextOp?.op !== 'STOP_ALL' && afterNextOp?.op !== 'STOP_ALL') {
+                thread.waitUntilTime = now + secs * 1000;
+                yielded = true;
+              }
             }
             break;
           }
@@ -804,6 +941,144 @@ export class BlockVerseRuntime {
     entity.y = Math.max(-180, Math.min(180, entity.y));
   }
 
+  // ================== RENDERER KHUSUS FLAPPY BIRD ARCADE ==================
+  private drawPipeColumn(x: number, y: number, w: number, h: number, isTopPipe: boolean) {
+    const { ctx } = this;
+    if (h <= 0) return;
+
+    // Gradasi Pipa Hijau 3D ala Mario / Flappy Bird
+    const pipeGrad = ctx.createLinearGradient(x, 0, x + w, 0);
+    pipeGrad.addColorStop(0, '#15803d');
+    pipeGrad.addColorStop(0.28, '#4ade80');
+    pipeGrad.addColorStop(0.55, '#22c55e');
+    pipeGrad.addColorStop(1, '#14532d');
+
+    ctx.fillStyle = pipeGrad;
+    ctx.strokeStyle = '#052e16';
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+
+    // Bibir/Tutup Pipa (Pipe Rim)
+    const rimH = 18;
+    const rimY = isTopPipe ? y + h - rimH : y;
+    ctx.fillStyle = pipeGrad;
+    ctx.fillRect(x - 4, rimY, w + 8, rimH);
+    ctx.strokeRect(x - 4, rimY, w + 8, rimH);
+  }
+
+  private renderFlappyArcade() {
+    if (!this.flappy) return;
+    const { ctx } = this;
+    const f = this.flappy;
+    const groundY = 278;
+
+    // 1. Gambar Sepasang Pipa Hijau Atas & Bawah
+    for (const pipe of f.pipes) {
+      const topH = pipe.gapY - pipe.gapHeight / 2;
+      const bottomY = pipe.gapY + pipe.gapHeight / 2;
+      const bottomH = groundY - bottomY;
+
+      this.drawPipeColumn(pipe.x, 0, 52, topH, true);
+      this.drawPipeColumn(pipe.x, bottomY, 52, bottomH, false);
+    }
+
+    // 2. Gambar Tanah Bergerak (Scrolling Ground Strip)
+    ctx.fillStyle = '#ded895';
+    ctx.fillRect(0, groundY, 480, 82);
+    ctx.fillStyle = '#73bf2e';
+    ctx.fillRect(0, groundY, 480, 14);
+    ctx.strokeStyle = '#558c22';
+    ctx.lineWidth = 2;
+    for (let gx = -f.groundScroll; gx < 480; gx += 24) {
+      ctx.beginPath();
+      ctx.moveTo(gx, groundY + 2);
+      ctx.lineTo(gx - 10, groundY + 12);
+      ctx.stroke();
+    }
+
+    // 3. Gambar Burung Flappy Kuning (Menghadap Kanan + Animasi Kepakan Sayap + Rotasi Paruh)
+    ctx.save();
+    ctx.translate(f.birdX, f.birdY);
+    ctx.rotate(f.birdRotation);
+
+    // Tubuh kuning bulat
+    ctx.fillStyle = '#facc15';
+    ctx.strokeStyle = '#422006';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 17, 13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Sayap Putih/Krem yang Mengepak
+    const wingOffsetY = f.wingFrame > 0 ? -4 : 2;
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.ellipse(-4, wingOffsetY, 8, 5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Mata Putih Besar + Pupil Hitam (Menghadap Kanan)
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(6, -4, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(8, -4, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Paruh Oranye (Menghadap Kanan)
+    ctx.fillStyle = '#f97316';
+    ctx.beginPath();
+    ctx.moveTo(12, -1);
+    ctx.lineTo(22, 2);
+    ctx.lineTo(12, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+
+    // 4. Petunjuk Kontrol atau Banner Game Over
+    if (!this.isRunning && !f.gameOver) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+      ctx.beginPath();
+      ctx.roundRect(120, 42, 240, 32, 8);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Tekan SPASI atau Klik Layar untuk Terbang!', 240, 62);
+    }
+
+    if (f.gameOver) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(115, 110, 250, 110, 14);
+      ctx.fill();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#f43f5e';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', 240, 148);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(`Skor Akhir: ${this.variables['score'] || 0}`, 240, 178);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('Klik tombol Play (Bendera Hijau) untuk main lagi', 240, 202);
+    }
+  }
+
   private drawTetrisBlockCell(x: number, y: number, size: number, color: string, alpha: number = 1) {
     const { ctx } = this;
     ctx.save();
@@ -811,7 +1086,6 @@ export class BlockVerseRuntime {
     ctx.fillStyle = color;
     ctx.fillRect(x + 1, y + 1, size - 2, size - 2);
 
-    // Efek Bevel 3D ala Tetris Arcade
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.fillRect(x + 1, y + 1, size - 2, 3);
     ctx.fillRect(x + 1, y + 1, 3, size - 2);
@@ -827,19 +1101,17 @@ export class BlockVerseRuntime {
     const { ctx } = this;
     const { cols, rows, board, currentPiece, nextPiece, gameOver } = this.tetris;
     const cellSize = 20;
-    const boardW = cols * cellSize; // 200px
-    const boardH = rows * cellSize; // 320px
+    const boardW = cols * cellSize;
+    const boardH = rows * cellSize;
     const offsetX = 140;
     const offsetY = 20;
 
-    // 1. Kotak Well / Arena Papan Tetris (10x16)
     ctx.fillStyle = '#090d16';
     ctx.fillRect(offsetX, offsetY, boardW, boardH);
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 2.5;
     ctx.strokeRect(offsetX - 2, offsetY - 2, boardW + 4, boardH + 4);
 
-    // 2. Garis Grid Tipis di Dalam Arena
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
     ctx.lineWidth = 1;
     for (let c = 1; c < cols; c++) {
@@ -855,22 +1127,15 @@ export class BlockVerseRuntime {
       ctx.stroke();
     }
 
-    // 3. Gambar Tumpukan Balok yang Sudah Terkunci di Bawah
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const cellColor = board[r][c];
         if (cellColor) {
-          this.drawTetrisBlockCell(
-            offsetX + c * cellSize,
-            offsetY + r * cellSize,
-            cellSize,
-            cellColor
-          );
+          this.drawTetrisBlockCell(offsetX + c * cellSize, offsetY + r * cellSize, cellSize, cellColor);
         }
       }
     }
 
-    // 4. Gambar Bayangan Jatuh (Ghost Piece) di Dasar Tumpukan
     if (!gameOver) {
       let ghostRow = currentPiece.row;
       while (this.canMoveTetromino(currentPiece.matrix, currentPiece.col, ghostRow + 1)) {
@@ -890,7 +1155,6 @@ export class BlockVerseRuntime {
         }
       }
 
-      // 5. Gambar Balok Tetromino Aktif yang Sedang Jatuh
       for (let r = 0; r < currentPiece.matrix.length; r++) {
         for (let c = 0; c < currentPiece.matrix[r].length; c++) {
           if (currentPiece.matrix[r][c]) {
@@ -905,7 +1169,6 @@ export class BlockVerseRuntime {
       }
     }
 
-    // 6. Panel Kanan: Preview NEXT PIECE & Petunjuk Kontrol
     const panelX = 358;
     ctx.fillStyle = '#0f172a';
     ctx.strokeStyle = '#475569';
@@ -931,7 +1194,6 @@ export class BlockVerseRuntime {
       }
     }
 
-    // Info Kontrol di Bawah Next Box
     ctx.fillStyle = '#cbd5e1';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'left';
@@ -980,21 +1242,21 @@ export class BlockVerseRuntime {
 
     if (pattern === 'sky') {
       // 1. Langit Gradasi Halus
-      const skyGrad = ctx.createLinearGradient(0, 0, 0, 270);
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, 275);
       skyGrad.addColorStop(0, '#0284c7');
       skyGrad.addColorStop(0.55, '#38bdf8');
       skyGrad.addColorStop(1, '#e0f2fe');
       ctx.fillStyle = skyGrad;
-      ctx.fillRect(0, 0, 480, 270);
+      ctx.fillRect(0, 0, 480, 275);
 
       // 2. Matahari Bersinar
       ctx.fillStyle = 'rgba(253, 224, 71, 0.25)';
       ctx.beginPath();
-      ctx.arc(410, 60, 42, 0, Math.PI * 2);
+      ctx.arc(410, 58, 40, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#fde047';
       ctx.beginPath();
-      ctx.arc(410, 60, 26, 0, Math.PI * 2);
+      ctx.arc(410, 58, 25, 0, Math.PI * 2);
       ctx.fill();
 
       // 3. Awan Putih Lembut
@@ -1010,14 +1272,14 @@ export class BlockVerseRuntime {
       drawCloud(230, 48, 0.85);
       drawCloud(325, 95, 0.7);
 
-      // 4. Siluet Bukit Hijau Jauh (Parallax Layer)
+      // 4. Siluet Bukit Hijau Jauh
       ctx.fillStyle = '#86efac';
       ctx.beginPath();
-      ctx.moveTo(0, 270);
-      ctx.quadraticCurveTo(120, 195, 260, 270);
-      ctx.quadraticCurveTo(380, 205, 480, 265);
-      ctx.lineTo(480, 280);
-      ctx.lineTo(0, 280);
+      ctx.moveTo(0, 275);
+      ctx.quadraticCurveTo(120, 200, 260, 275);
+      ctx.quadraticCurveTo(380, 210, 480, 270);
+      ctx.lineTo(480, 285);
+      ctx.lineTo(0, 285);
       ctx.fill();
 
       // 5. Bukit Hijau Dekat
@@ -1030,19 +1292,17 @@ export class BlockVerseRuntime {
       ctx.lineTo(0, 360);
       ctx.fill();
 
-      // 6. Padang Rumput Utama & Tekstur Tanah
-      const grassGrad = ctx.createLinearGradient(0, 268, 0, 360);
+      // 6. Padang Rumput Utama
+      const grassGrad = ctx.createLinearGradient(0, 272, 0, 360);
       grassGrad.addColorStop(0, '#22c55e');
       grassGrad.addColorStop(0.15, '#16a34a');
       grassGrad.addColorStop(1, '#15803d');
       ctx.fillStyle = grassGrad;
-      ctx.fillRect(0, 268, 480, 92);
+      ctx.fillRect(0, 272, 480, 88);
 
-      // Garis highlight pucuk rumput
       ctx.fillStyle = '#86efac';
-      ctx.fillRect(0, 268, 480, 4);
+      ctx.fillRect(0, 272, 480, 4);
     } else if (pattern === 'stars') {
-      // Luar Angkasa & Nebula
       const spaceGrad = ctx.createLinearGradient(0, 0, 480, 360);
       spaceGrad.addColorStop(0, '#030712');
       spaceGrad.addColorStop(0.5, '#0f172a');
@@ -1050,21 +1310,18 @@ export class BlockVerseRuntime {
       ctx.fillStyle = spaceGrad;
       ctx.fillRect(0, 0, 480, 360);
 
-      // Nebula Glow
       const radGrad = ctx.createRadialGradient(130, 110, 10, 130, 110, 140);
       radGrad.addColorStop(0, 'rgba(139, 92, 246, 0.25)');
       radGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
       ctx.fillStyle = radGrad;
       ctx.fillRect(0, 0, 480, 360);
 
-      // Bintang-bintang
       for (let i = 0; i < 55; i++) {
         ctx.fillStyle = i % 4 === 0 ? '#fde047' : 'rgba(255, 255, 255, 0.65)';
         const sz = i % 5 === 0 ? 2.5 : 1.5;
         ctx.fillRect(((i * 97) % 460) + 10, ((i * 53) % 340) + 10, sz, sz);
       }
 
-      // Planet Bercincin di Kejauhan
       ctx.save();
       ctx.translate(385, 85);
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
@@ -1078,7 +1335,6 @@ export class BlockVerseRuntime {
       ctx.fill();
       ctx.restore();
     } else if (pattern === 'dungeon') {
-      // Dinding Bata Dungeon Gelap
       ctx.fillStyle = '#1e1b4b';
       ctx.fillRect(0, 0, 480, 360);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
@@ -1089,13 +1345,11 @@ export class BlockVerseRuntime {
           ctx.strokeRect(c + offset, r, 48, 24);
         }
       }
-      // Lantai Batu Bawah Tanah
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 290, 480, 70);
       ctx.fillStyle = '#334155';
       ctx.fillRect(0, 290, 480, 5);
     } else if (pattern === 'neon') {
-      // Cyberpunk Neon Synthwave
       const neonGrad = ctx.createLinearGradient(0, 0, 0, 240);
       neonGrad.addColorStop(0, '#090d16');
       neonGrad.addColorStop(0.6, '#311042');
@@ -1103,7 +1357,6 @@ export class BlockVerseRuntime {
       ctx.fillStyle = neonGrad;
       ctx.fillRect(0, 0, 480, 240);
 
-      // Siluet Gedung Kota
       ctx.fillStyle = '#0f172a';
       const widths = [45, 60, 38, 70, 52, 65, 48, 55, 60];
       let curX = 0;
@@ -1113,7 +1366,6 @@ export class BlockVerseRuntime {
         curX += w;
       });
 
-      // Lantai Grid Neon
       ctx.fillStyle = '#1e1b4b';
       ctx.fillRect(0, 240, 480, 120);
       ctx.strokeStyle = 'rgba(236, 72, 153, 0.45)';
@@ -1131,7 +1383,6 @@ export class BlockVerseRuntime {
         ctx.stroke();
       }
     } else if (pattern === 'desert') {
-      // Gurun Pasir Senja
       const desertSky = ctx.createLinearGradient(0, 0, 0, 260);
       desertSky.addColorStop(0, '#f97316');
       desertSky.addColorStop(0.6, '#fdba74');
@@ -1139,7 +1390,6 @@ export class BlockVerseRuntime {
       ctx.fillStyle = desertSky;
       ctx.fillRect(0, 0, 480, 260);
 
-      // Piramida Siluet
       ctx.fillStyle = '#d97706';
       ctx.beginPath();
       ctx.moveTo(90, 260);
@@ -1147,13 +1397,11 @@ export class BlockVerseRuntime {
       ctx.lineTo(240, 260);
       ctx.fill();
 
-      // Padang Pasir
       ctx.fillStyle = '#f59e0b';
       ctx.fillRect(0, 260, 480, 100);
       ctx.fillStyle = '#fbbf24';
       ctx.fillRect(0, 260, 480, 6);
     } else if (pattern === 'ocean') {
-      // Laut Bawah Air (Underwater Ocean)
       const oceanGrad = ctx.createLinearGradient(0, 0, 0, 360);
       oceanGrad.addColorStop(0, '#0284c7');
       oceanGrad.addColorStop(0.4, '#0369a1');
@@ -1162,7 +1410,6 @@ export class BlockVerseRuntime {
       ctx.fillStyle = oceanGrad;
       ctx.fillRect(0, 0, 480, 360);
 
-      // Sinar Cahaya Menembus Air
       ctx.save();
       ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.beginPath();
@@ -1179,7 +1426,6 @@ export class BlockVerseRuntime {
       ctx.fill();
       ctx.restore();
 
-      // Gelembung Udara
       for (let i = 0; i < 24; i++) {
         const bx = ((i * 73) % 450) + 15;
         const by = ((i * 47) % 320) + 20;
@@ -1191,7 +1437,6 @@ export class BlockVerseRuntime {
         ctx.stroke();
       }
 
-      // Dasar Pasir Laut
       ctx.fillStyle = '#ca8a04';
       ctx.beginPath();
       ctx.moveTo(0, 335);
@@ -1203,7 +1448,6 @@ export class BlockVerseRuntime {
       ctx.fillStyle = '#eab308';
       ctx.fillRect(0, 352, 480, 8);
     } else if (pattern === 'arena') {
-      // Lapangan Stadion / Pong Arena
       ctx.fillStyle = '#15803d';
       ctx.fillRect(0, 0, 480, 360);
       for (let x = 0; x < 480; x += 60) {
@@ -1261,7 +1505,6 @@ export class BlockVerseRuntime {
       ctx.lineTo(480, y);
       ctx.stroke();
     }
-    // Sumbu Utama X=0 dan Y=0
     ctx.strokeStyle = 'rgba(239, 68, 68, 0.65)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -1286,12 +1529,12 @@ export class BlockVerseRuntime {
     const now = performance.now();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Gambar Latar Belakang Scenic / Custom Wallpaper
     this.renderScenicBackdrop();
 
-    // 2. Render Papan Matrix Tetris (jika aktif) atau Sprite Standar
     if (this.tetris && this.tetris.active) {
       this.renderTetrisBoard();
+    } else if (this.flappy && this.flappy.active) {
+      this.renderFlappyArcade();
     } else {
       for (const entity of this.entities) {
         if (!entity.visible) continue;
@@ -1352,7 +1595,6 @@ export class BlockVerseRuntime {
       }
     }
 
-    // 3. Render Badge Variabel di Pojok Kiri Atas Stage
     const varKeys = Object.keys(this.variables);
     varKeys.forEach((key, idx) => {
       const val = this.variables[key];
@@ -1390,8 +1632,50 @@ export class BlockVerseRuntime {
 }
 
 // ============================================================================
-// KOLEKSI PRESET GAME (TERMASUK REAL MATRIX TETRIS 10x16)
+// PRESET FLAPPY BIRD 2D SKY (DENGAN PIPA ATAS-BAWAH & FISIKA GRAVITASI ASLI)
 // ============================================================================
+export const FLAPPY_BIRD_PRESET: BlockVerseProject = {
+  title: 'Flappy Bird 2D Sky',
+  stageBackdrop: '#e0f2fe',
+  stagePattern: 'sky',
+  variables: { score: 0 },
+  broadcasts: ['game over'],
+  sprites: [
+    {
+      id: 'sprite_bird',
+      name: 'Flappy',
+      x: -115,
+      y: 40,
+      size: 100,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🐤',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            {
+              op: 'FOREVER',
+              substack: [{ op: 'FLAPPY_STEP' }],
+            },
+          ],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'space',
+          ops: [{ op: 'FLAPPY_FLAP' }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowup',
+          ops: [{ op: 'FLAPPY_FLAP' }],
+        },
+      ],
+    },
+  ],
+};
 
 export const TETRIS_DROP_PRESET: BlockVerseProject = {
   title: 'Tetris Block Drop',
@@ -1478,7 +1762,6 @@ export const STAR_CATCHER_GAME: BlockVerseProject = {
           ops: [
             { op: 'SET_VAR', varName: 'score', value: 0 },
             { op: 'GOTO_XY', x: 0, y: -115 },
-            { op: 'SAY', text: 'Tangkap Bintang & Hindari Bom!', seconds: 2 },
             {
               op: 'FOREVER',
               substack: [
@@ -1569,110 +1852,6 @@ export const STAR_CATCHER_GAME: BlockVerseProject = {
                   op: 'IF',
                   condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -165 },
                   substack: [{ op: 'GOTO_XY', x: { type: 'RANDOM', min: -200, max: 200 }, y: 160 }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
-
-export const FLAPPY_BIRD_PRESET: BlockVerseProject = {
-  title: 'Flappy Bird 2D Sky',
-  stageBackdrop: '#e0f2fe',
-  stagePattern: 'sky',
-  variables: { score: 0 },
-  broadcasts: ['game over'],
-  sprites: [
-    {
-      id: 'sprite_bird',
-      name: 'Flappy',
-      x: -100,
-      y: 20,
-      size: 105,
-      direction: 90,
-      visible: true,
-      rotationStyle: 'dont-rotate',
-      costumeEmoji: '🐦',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [
-            { op: 'SET_VAR', varName: 'score', value: 0 },
-            { op: 'GOTO_XY', x: -100, y: 20 },
-            { op: 'SAY', text: 'Tekan SPASI untuk Terbang!', seconds: 1.5 },
-            {
-              op: 'FOREVER',
-              substack: [
-                { op: 'CHANGE_Y', dy: -3.5 },
-                {
-                  op: 'IF',
-                  condition: { type: 'KEY_PRESSED', key: 'space' },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'jump' },
-                    { op: 'CHANGE_Y', dy: 11 },
-                  ],
-                },
-                {
-                  op: 'IF',
-                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -155 },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'hit' },
-                    { op: 'BROADCAST', message: 'game over' },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-        {
-          trigger: 'WHEN_RECEIVE',
-          param: 'game over',
-          ops: [
-            { op: 'SAY', text: 'Menabrak! Game Over!', seconds: 2 },
-            { op: 'SUBMIT_SCORE', score: { type: 'VAR', name: 'score' } },
-            { op: 'STOP_ALL' },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'sprite_pipe',
-      name: 'Pipa',
-      x: 200,
-      y: -60,
-      size: 130,
-      direction: 90,
-      visible: true,
-      rotationStyle: 'dont-rotate',
-      costumeEmoji: '🌵',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [
-            { op: 'GOTO_XY', x: 200, y: -60 },
-            {
-              op: 'FOREVER',
-              substack: [
-                { op: 'CHANGE_X', dx: -6 },
-                {
-                  op: 'IF',
-                  condition: { type: 'TOUCHING', target: 'Flappy' },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'hit' },
-                    { op: 'BROADCAST', message: 'game over' },
-                  ],
-                },
-                {
-                  op: 'IF',
-                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'X_POS' }, b: -220 },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'coin' },
-                    { op: 'CHANGE_VAR', varName: 'score', delta: 10 },
-                    { op: 'GOTO_XY', x: 220, y: { type: 'RANDOM', min: -120, max: 110 } },
-                  ],
                 },
               ],
             },
@@ -1789,7 +1968,6 @@ export const BLANK_STARTER_PROJECT: BlockVerseProject = {
           trigger: 'WHEN_FLAG_CLICKED',
           ops: [
             { op: 'GOTO_XY', x: 0, y: 0 },
-            { op: 'SAY', text: 'Gunakan panah kiri/kanan!', seconds: 2 },
             {
               op: 'FOREVER',
               substack: [

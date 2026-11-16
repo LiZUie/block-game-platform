@@ -304,6 +304,21 @@ export function registerScratchBlocks() {
       nextStatement: null,
       colour: '#4C97FF',
     },
+    // --- BLOK KHUSUS FLAPPY BIRD PHYSICS & PIPES ---
+    {
+      type: 'flappy_step',
+      message0: '🐦 flappy: apply gravity, scroll pipes & check collision',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'flappy_flap',
+      message0: '🐦 flappy: flap wings upward (jump)',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
 
     // LOOKS
     {
@@ -643,6 +658,8 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     { kind: 'block', type: 'tetris_move', inputs: { DIR: { shadow: { type: 'math_number', fields: { NUM: 1 } } } } },
     { kind: 'block', type: 'tetris_rotate' },
     { kind: 'block', type: 'tetris_hard_drop' },
+    { kind: 'block', type: 'flappy_step' },
+    { kind: 'block', type: 'flappy_flap' },
   ],
   Looks: [
     {
@@ -874,6 +891,12 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
       case 'tetris_hard_drop':
         ops.push({ op: 'TETRIS_HARD_DROP' });
         break;
+      case 'flappy_step':
+        ops.push({ op: 'FLAPPY_STEP' });
+        break;
+      case 'flappy_flap':
+        ops.push({ op: 'FLAPPY_FLAP' });
+        break;
       case 'looks_sayforsecs':
         ops.push({
           op: 'SAY',
@@ -1068,6 +1091,10 @@ function opsToXmlChain(ops: CompiledOp[], index: number = 0): string {
       return `<block type="tetris_rotate">${nextXml}</block>`;
     case 'TETRIS_HARD_DROP':
       return `<block type="tetris_hard_drop">${nextXml}</block>`;
+    case 'FLAPPY_STEP':
+      return `<block type="flappy_step">${nextXml}</block>`;
+    case 'FLAPPY_FLAP':
+      return `<block type="flappy_flap">${nextXml}</block>`;
     case 'SAY':
       return `<block type="looks_sayforsecs"><value name="MESSAGE">${valueToXml(op.text, true)}</value><value name="SECS">${valueToXml(op.seconds)}</value>${nextXml}</block>`;
     case 'SET_SIZE':
