@@ -58,6 +58,37 @@ interface ThreadProcess {
   waitUntilTime: number;
 }
 
+// 7 Bentuk Standar Tetromino (I, O, T, S, Z, J, L)
+const TETROMINO_SHAPES: { name: string; color: string; matrix: number[][] }[] = [
+  { name: 'I', color: '#06b6d4', matrix: [[1, 1, 1, 1]] },
+  { name: 'O', color: '#eab308', matrix: [[1, 1], [1, 1]] },
+  { name: 'T', color: '#a855f7', matrix: [[0, 1, 0], [1, 1, 1]] },
+  { name: 'S', color: '#22c55e', matrix: [[0, 1, 1], [1, 1, 0]] },
+  { name: 'Z', color: '#ef4444', matrix: [[1, 1, 0], [0, 1, 1]] },
+  { name: 'J', color: '#3b82f6', matrix: [[1, 0, 0], [1, 1, 1]] },
+  { name: 'L', color: '#f97316', matrix: [[0, 0, 1], [1, 1, 1]] },
+];
+
+interface TetrisMatrixState {
+  active: boolean;
+  cols: number;
+  rows: number;
+  board: (string | null)[][];
+  currentPiece: {
+    name: string;
+    color: string;
+    matrix: number[][];
+    col: number;
+    row: number;
+  };
+  nextPiece: {
+    name: string;
+    color: string;
+    matrix: number[][];
+  };
+  gameOver: boolean;
+}
+
 export function playSynthSound(type: string) {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -126,6 +157,7 @@ export class BlockVerseRuntime {
   private draggingEntity: RuntimeEntity | null = null;
   private isRunning: boolean = false;
   private rafId: number | null = null;
+  private tetris: TetrisMatrixState | null = null;
   private onScoreSubmit?: (score: number) => void;
   private onStateUpdate?: (vars: Record<string, any>) => void;
   private onSpriteDragged?: (spriteId: string, newX: number, newY: number) => void;
@@ -215,7 +247,10 @@ export class BlockVerseRuntime {
     const wasPressed = this.pressedKeys.has(key);
     this.pressedKeys.add(key);
 
-    if (this.isRunning && !wasPressed) {
+    // Untuk Tetris, izinkan tombol panah kiri/kanan/bawah berulang saat ditahan
+    const allowRepeat = this.tetris?.active && ['arrowleft', 'arrowright', 'arrowdown'].includes(key);
+
+    if (this.isRunning && (!wasPressed || allowRepeat)) {
       this.entities.forEach((entity) => {
         entity.scripts
           .filter((s) => s.trigger === 'WHEN_KEY_PRESSED' && (s.param === key || s.param === 'any'))
@@ -238,6 +273,124 @@ export class BlockVerseRuntime {
     if (wasRunning) this.start();
   }
 
+  private hasTetrisBlocks(): boolean {
+    return this.project.sprites.some((sp) =>
+      sp.scripts.some((sc) =>
+        JSON.stringify(sc.ops).includes('TETRIS_')
+      )
+    );
+  }
+
+  private randomTetromino() {
+    const pick = TETROMINO_SHAPES[Math.floor(Math.random() * TETROMINO_SHAPES.length)];
+    return {
+      name: pick.name,
+      color: pick.color,
+      matrix: pick.matrix.map((row) => [...row]),
+    };
+  }
+
+  private initTetrisMatrix() {
+    const cols = 10;
+    const rows = 16;
+    const board = Array.from({ length: rows }, () => Array(cols).fill(null));
+    const first = this.randomTetromino();
+    const next = this.randomTetromino();
+
+    this.tetris = {
+      active: true,
+      cols,
+      rows,
+      board,
+      currentPiece: {
+        ...first,
+        col: Math.floor((cols - first.matrix[0].length) / 2),
+        row: 0,
+      },
+      nextPiece: next,
+      gameOver: false,
+    };
+  }
+
+  private canMoveTetromino(matrix: number[][], targetCol: number, targetRow: number): boolean {
+    if (!this.tetris) return false;
+    const { cols, rows, board } = this.tetris;
+    for (let r = 0; r < matrix.length; r++) {
+      for (let c = 0; c < matrix[r].length; c++) {
+        if (!matrix[r][c]) continue;
+        const nc = targetCol + c;
+        const nr = targetRow + r;
+        if (nc < 0 || nc >= cols || nr >= rows) return false;
+        if (nr >= 0 && board[nr][nc] !== null) return false;
+      }
+    }
+    return true;
+  }
+
+  private lockAndClearTetrisLines() {
+    if (!this.tetris) return;
+    const { board, currentPiece, cols, rows } = this.tetris;
+
+    // 1. Kunci balok aktif ke papan tumpukan
+    for (let r = 0; r < currentPiece.matrix.length; r++) {
+      for (let c = 0; c < currentPiece.matrix[r].length; c++) {
+        if (currentPiece.matrix[r][c]) {
+          const br = currentPiece.row + r;
+          const bc = currentPiece.col + c;
+          if (br >= 0 && br < rows && bc >= 0 && bc < cols) {
+            board[br][bc] = currentPiece.color;
+          }
+        }
+      }
+    }
+
+    // 2. Cek dan hapus semua baris yang penuh dari kiri ke kanan
+    let clearedCount = 0;
+    for (let r = rows - 1; r >= 0; r--) {
+      if (board[r].every((cell) => cell !== null)) {
+        board.splice(r, 1);
+        board.unshift(Array(cols).fill(null));
+        clearedCount++;
+        r++; // Periksa lagi indeks baris yang baru turun
+      }
+    }
+
+    if (clearedCount > 0) {
+      playSynthSound('win');
+      const bonus = clearedCount === 1 ? 100 : clearedCount === 2 ? 300 : clearedCount === 3 ? 500 : 800;
+      this.variables['score'] = Number(this.variables['score'] || 0) + bonus;
+      this.variables['lines'] = Number(this.variables['lines'] || 0) + clearedCount;
+    } else {
+      playSynthSound('jump');
+      this.variables['score'] = Number(this.variables['score'] || 0) + 5;
+    }
+
+    // 3. Munculkan balok berikutnya dari atas
+    const next = this.tetris.nextPiece;
+    const spawnCol = Math.floor((cols - next.matrix[0].length) / 2);
+    this.tetris.currentPiece = {
+      ...next,
+      col: spawnCol,
+      row: 0,
+    };
+    this.tetris.nextPiece = this.randomTetromino();
+
+    // 4. Jika balok baru langsung menabrak tumpukan di paling atas -> Game Over!
+    if (!this.canMoveTetromino(this.tetris.currentPiece.matrix, spawnCol, 0)) {
+      this.tetris.gameOver = true;
+      playSynthSound('hit');
+      if (this.onScoreSubmit) {
+        this.onScoreSubmit(Number(this.variables['score'] || 0));
+      }
+      this.entities.forEach((entity) => {
+        entity.scripts
+          .filter((s) => s.trigger === 'WHEN_RECEIVE' && s.param === 'game over')
+          .forEach((s) => this.spawnThread(entity, JSON.parse(JSON.stringify(s.ops))));
+      });
+      this.stop();
+    }
+  }
+
   public resetState() {
     this.variables = { ...this.project.variables };
     this.entities = this.project.sprites.map((sp) => ({
@@ -247,6 +400,12 @@ export class BlockVerseRuntime {
       localVars: { isClone: 'false' },
     }));
     this.threads = [];
+
+    if (this.hasTetrisBlocks()) {
+      this.initTetrisMatrix();
+    } else {
+      this.tetris = null;
+    }
   }
 
   public start() {
@@ -449,6 +608,57 @@ export class BlockVerseRuntime {
               this.clampPosition(thread.entity);
             }
             break;
+
+          // ================== EKSEKUSI BLOK MATRIX TETRIS ==================
+          case 'TETRIS_STEP': {
+            if (!this.tetris || this.tetris.gameOver) break;
+            const p = this.tetris.currentPiece;
+            if (this.canMoveTetromino(p.matrix, p.col, p.row + 1)) {
+              p.row += 1;
+            } else {
+              this.lockAndClearTetrisLines();
+            }
+            break;
+          }
+          case 'TETRIS_MOVE': {
+            if (!this.tetris || this.tetris.gameOver) break;
+            const dir = Math.sign(Number(this.evaluateValue(op.dir, thread.entity)));
+            const p = this.tetris.currentPiece;
+            if (this.canMoveTetromino(p.matrix, p.col + dir, p.row)) {
+              p.col += dir;
+            }
+            break;
+          }
+          case 'TETRIS_ROTATE': {
+            if (!this.tetris || this.tetris.gameOver) break;
+            const p = this.tetris.currentPiece;
+            const m = p.matrix;
+            const rotated = m[0].map((_, index) => m.map((row) => row[index]).reverse());
+            // Wall-kick sederhana jika berputar di dekat tepi dinding
+            if (this.canMoveTetromino(rotated, p.col, p.row)) {
+              p.matrix = rotated;
+              playSynthSound('jump');
+            } else if (this.canMoveTetromino(rotated, p.col - 1, p.row)) {
+              p.col -= 1;
+              p.matrix = rotated;
+              playSynthSound('jump');
+            } else if (this.canMoveTetromino(rotated, p.col + 1, p.row)) {
+              p.col += 1;
+              p.matrix = rotated;
+              playSynthSound('jump');
+            }
+            break;
+          }
+          case 'TETRIS_HARD_DROP': {
+            if (!this.tetris || this.tetris.gameOver) break;
+            const p = this.tetris.currentPiece;
+            while (this.canMoveTetromino(p.matrix, p.col, p.row + 1)) {
+              p.row += 1;
+            }
+            this.lockAndClearTetrisLines();
+            break;
+          }
+
           case 'SAY': {
             const text = String(this.evaluateValue(op.text, thread.entity));
             const secs = Number(this.evaluateValue(op.seconds, thread.entity));
@@ -592,6 +802,155 @@ export class BlockVerseRuntime {
     entity.y = Math.max(-180, Math.min(180, entity.y));
   }
 
+  private drawTetrisBlockCell(x: number, y: number, size: number, color: string, alpha: number = 1) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(x + 1, y + 1, size - 2, size - 2);
+
+    // Efek Bevel 3D ala Tetris Arcade
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.fillRect(x + 1, y + 1, size - 2, 3);
+    ctx.fillRect(x + 1, y + 1, 3, size - 2);
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(x + 1, y + size - 4, size - 2, 3);
+    ctx.fillRect(x + size - 4, y + 1, 3, size - 2);
+    ctx.restore();
+  }
+
+  private renderTetrisBoard() {
+    if (!this.tetris) return;
+    const { ctx } = this;
+    const { cols, rows, board, currentPiece, nextPiece, gameOver } = this.tetris;
+    const cellSize = 20;
+    const boardW = cols * cellSize; // 200px
+    const boardH = rows * cellSize; // 320px
+    const offsetX = 140;
+    const offsetY = 20;
+
+    // 1. Kotak Well / Arena Papan Tetris (10x16)
+    ctx.fillStyle = '#090d16';
+    ctx.fillRect(offsetX, offsetY, boardW, boardH);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(offsetX - 2, offsetY - 2, boardW + 4, boardH + 4);
+
+    // 2. Garis Grid Tipis di Dalam Arena
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+    ctx.lineWidth = 1;
+    for (let c = 1; c < cols; c++) {
+      ctx.beginPath();
+      ctx.moveTo(offsetX + c * cellSize, offsetY);
+      ctx.lineTo(offsetX + c * cellSize, offsetY + boardH);
+      ctx.stroke();
+    }
+    for (let r = 1; r < rows; r++) {
+      ctx.beginPath();
+      ctx.moveTo(offsetX, offsetY + r * cellSize);
+      ctx.lineTo(offsetX + boardW, offsetY + r * cellSize);
+      ctx.stroke();
+    }
+
+    // 3. Gambar Tumpukan Balok yang Sudah Terkunci di Bawah
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cellColor = board[r][c];
+        if (cellColor) {
+          this.drawTetrisBlockCell(
+            offsetX + c * cellSize,
+            offsetY + r * cellSize,
+            cellSize,
+            cellColor
+          );
+        }
+      }
+    }
+
+    // 4. Gambar Bayangan Jatuh (Ghost Piece) di Dasar Tumpukan
+    if (!gameOver) {
+      let ghostRow = currentPiece.row;
+      while (this.canMoveTetromino(currentPiece.matrix, currentPiece.col, ghostRow + 1)) {
+        ghostRow++;
+      }
+      for (let r = 0; r < currentPiece.matrix.length; r++) {
+        for (let c = 0; c < currentPiece.matrix[r].length; c++) {
+          if (currentPiece.matrix[r][c]) {
+            this.drawTetrisBlockCell(
+              offsetX + (currentPiece.col + c) * cellSize,
+              offsetY + (ghostRow + r) * cellSize,
+              cellSize,
+              currentPiece.color,
+              0.22
+            );
+          }
+        }
+      }
+
+      // 5. Gambar Balok Tetromino Aktif yang Sedang Jatuh
+      for (let r = 0; r < currentPiece.matrix.length; r++) {
+        for (let c = 0; c < currentPiece.matrix[r].length; c++) {
+          if (currentPiece.matrix[r][c]) {
+            this.drawTetrisBlockCell(
+              offsetX + (currentPiece.col + c) * cellSize,
+              offsetY + (currentPiece.row + r) * cellSize,
+              cellSize,
+              currentPiece.color
+            );
+          }
+        }
+      }
+    }
+
+    // 6. Panel Kanan: Preview NEXT PIECE & Petunjuk Kontrol
+    const panelX = 358;
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(panelX, offsetY, 108, 105, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('NEXT BLOCK', panelX + 54, offsetY + 18);
+
+    const nm = nextPiece.matrix;
+    const startX = panelX + 54 - (nm[0].length * 16) / 2;
+    const startY = offsetY + 55 - (nm.length * 16) / 2;
+    for (let r = 0; r < nm.length; r++) {
+      for (let c = 0; c < nm[r].length; c++) {
+        if (nm[r][c]) {
+          this.drawTetrisBlockCell(startX + c * 16, startY + r * 16, 16, nextPiece.color);
+        }
+      }
+    }
+
+    // Info Kontrol di Bawah Next Box
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('⬅️➡️ : Geser', panelX, offsetY + 130);
+    ctx.fillText('⬆️ : Putar 90°', panelX, offsetY + 148);
+    ctx.fillText('⬇️ : Turun Cepat', panelX, offsetY + 166);
+    ctx.fillText('SPASI : Drop', panelX, offsetY + 184);
+
+    if (gameOver) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillRect(offsetX, offsetY + 110, boardW, 90);
+      ctx.fillStyle = '#f43f5e';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', offsetX + boardW / 2, offsetY + 150);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(`Skor: ${this.variables['score'] || 0}`, offsetX + boardW / 2, offsetY + 175);
+    }
+  }
+
   public renderFrame() {
     const { ctx, canvas } = this;
     const now = performance.now();
@@ -607,7 +966,7 @@ export class BlockVerseRuntime {
         ctx.fillRect(((i * 97) % 460) + 10, ((i * 53) % 340) + 10, 2, 2);
       }
     } else if (pattern === 'grid') {
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
       ctx.lineWidth = 1;
       for (let x = 0; x <= 480; x += 30) {
         ctx.beginPath();
@@ -631,73 +990,80 @@ export class BlockVerseRuntime {
       ctx.fillRect(0, 0, 480, 360);
     }
 
-    for (const entity of this.entities) {
-      if (!entity.visible) continue;
+    // Jika mode Matrix Tetris aktif, gambar papan 10x16 beserta seluruh balok Tetromino
+    if (this.tetris && this.tetris.active) {
+      this.renderTetrisBoard();
+    } else {
+      // Render Sprite Standar
+      for (const entity of this.entities) {
+        if (!entity.visible) continue;
 
-      const screenX = 240 + entity.x;
-      const screenY = 180 - entity.y;
-      const scale = entity.size / 100;
+        const screenX = 240 + entity.x;
+        const screenY = 180 - entity.y;
+        const scale = entity.size / 100;
 
-      ctx.save();
-      ctx.translate(screenX, screenY);
+        ctx.save();
+        ctx.translate(screenX, screenY);
 
-      if (entity.rotationStyle === 'all-around') {
-        ctx.rotate(((entity.direction - 90) * Math.PI) / 180);
-      } else if (entity.rotationStyle === 'left-right' && (entity.direction < 0 || entity.direction > 180)) {
-        ctx.scale(-1, 1);
-      }
-
-      ctx.scale(scale, scale);
-
-      if (entity.costumeImageUrl) {
-        let img = this.imageCache.get(entity.costumeImageUrl);
-        if (!img) {
-          img = new Image();
-          img.src = entity.costumeImageUrl;
-          this.imageCache.set(entity.costumeImageUrl, img);
+        if (entity.rotationStyle === 'all-around') {
+          ctx.rotate(((entity.direction - 90) * Math.PI) / 180);
+        } else if (entity.rotationStyle === 'left-right' && (entity.direction < 0 || entity.direction > 180)) {
+          ctx.scale(-1, 1);
         }
-        if (img.complete && img.naturalWidth > 0) {
-          ctx.drawImage(img, -24, -24, 48, 48);
+
+        ctx.scale(scale, scale);
+
+        if (entity.costumeImageUrl) {
+          let img = this.imageCache.get(entity.costumeImageUrl);
+          if (!img) {
+            img = new Image();
+            img.src = entity.costumeImageUrl;
+            this.imageCache.set(entity.costumeImageUrl, img);
+          }
+          if (img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, -24, -24, 48, 48);
+          }
+        } else {
+          ctx.font = '36px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(entity.costumeEmoji || '🐱', 0, 0);
         }
-      } else {
-        ctx.font = '36px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(entity.costumeEmoji || '🐱', 0, 0);
-      }
 
-      ctx.restore();
+        ctx.restore();
 
-      if (entity.sayText && (!entity.sayExpireTime || now < entity.sayExpireTime)) {
-        ctx.font = 'bold 12px sans-serif';
-        const textWidth = Math.max(40, ctx.measureText(entity.sayText).width + 16);
-        const bx = Math.min(470 - textWidth, Math.max(10, screenX + 15));
-        const by = Math.max(10, screenY - 45);
+        if (entity.sayText && (!entity.sayExpireTime || now < entity.sayExpireTime)) {
+          ctx.font = 'bold 12px sans-serif';
+          const textWidth = Math.max(40, ctx.measureText(entity.sayText).width + 16);
+          const bx = Math.min(470 - textWidth, Math.max(10, screenX + 15));
+          const by = Math.max(10, screenY - 45);
 
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(bx, by, textWidth, 26, 8);
-        ctx.fill();
-        ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(bx, by, textWidth, 26, 8);
+          ctx.fill();
+          ctx.stroke();
 
-        ctx.fillStyle = '#1e293b';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(entity.sayText, bx + textWidth / 2, by + 13);
+          ctx.fillStyle = '#1e293b';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(entity.sayText, bx + textWidth / 2, by + 13);
+        }
       }
     }
 
+    // Render Badge Variabel (Score, Lines, dll.)
     const varKeys = Object.keys(this.variables);
     varKeys.forEach((key, idx) => {
       const val = this.variables[key];
-      const badgeX = 10;
-      const badgeY = 10 + idx * 30;
+      const badgeX = 12;
+      const badgeY = 20 + idx * 32;
       const label = `${key}: ${val}`;
 
       ctx.font = 'bold 12px sans-serif';
-      const boxW = Math.max(70, ctx.measureText(label).width + 20);
+      const boxW = Math.max(78, ctx.measureText(label).width + 20);
 
       ctx.fillStyle = '#ff8c1a';
       ctx.beginPath();
@@ -726,10 +1092,71 @@ export class BlockVerseRuntime {
 }
 
 // ============================================================================
-// KOLEKSI 7 PRESET GAME SIAP DIMAINKAN & DIEDIT BLOKNYA
+// KOLEKSI PRESET GAME (TERMASUK REAL MATRIX TETRIS 10x16)
 // ============================================================================
 
-// 1. CAT & STAR CATCHER
+export const TETRIS_DROP_PRESET: BlockVerseProject = {
+  title: 'Tetris Block Drop',
+  stageBackdrop: '#1e1b4b',
+  stagePattern: 'grid',
+  variables: { score: 0, lines: 0 },
+  broadcasts: ['game over'],
+  sprites: [
+    {
+      id: 'sprite_tetromino',
+      name: 'Tetromino',
+      x: 0,
+      y: 0,
+      size: 100,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🧱',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'SET_VAR', varName: 'lines', value: 0 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'WAIT', seconds: 0.45 },
+                { op: 'TETRIS_STEP' },
+              ],
+            },
+          ],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowleft',
+          ops: [{ op: 'TETRIS_MOVE', dir: -1 }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowright',
+          ops: [{ op: 'TETRIS_MOVE', dir: 1 }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowup',
+          ops: [{ op: 'TETRIS_ROTATE' }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowdown',
+          ops: [{ op: 'TETRIS_STEP' }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'space',
+          ops: [{ op: 'TETRIS_HARD_DROP' }],
+        },
+      ],
+    },
+  ],
+};
+
 export const STAR_CATCHER_GAME: BlockVerseProject = {
   title: 'Cat & Star Catcher',
   stageBackdrop: '#e0f2fe',
@@ -854,7 +1281,6 @@ export const STAR_CATCHER_GAME: BlockVerseProject = {
   ],
 };
 
-// 2. FLAPPY BIRD 2D SKY (BARU)
 export const FLAPPY_BIRD_PRESET: BlockVerseProject = {
   title: 'Flappy Bird 2D Sky',
   stageBackdrop: '#e0f2fe',
@@ -956,49 +1382,9 @@ export const FLAPPY_BIRD_PRESET: BlockVerseProject = {
         },
       ],
     },
-    {
-      id: 'sprite_cloud_star',
-      name: 'BonusRing',
-      x: 120,
-      y: 60,
-      size: 95,
-      direction: 90,
-      visible: true,
-      rotationStyle: 'dont-rotate',
-      costumeEmoji: '🪙',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [
-            { op: 'GOTO_XY', x: 120, y: 60 },
-            {
-              op: 'FOREVER',
-              substack: [
-                { op: 'CHANGE_X', dx: -5 },
-                {
-                  op: 'IF',
-                  condition: { type: 'TOUCHING', target: 'Flappy' },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'coin' },
-                    { op: 'CHANGE_VAR', varName: 'score', delta: 25 },
-                    { op: 'GOTO_XY', x: 225, y: { type: 'RANDOM', min: -90, max: 120 } },
-                  ],
-                },
-                {
-                  op: 'IF',
-                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'X_POS' }, b: -220 },
-                  substack: [{ op: 'GOTO_XY', x: 225, y: { type: 'RANDOM', min: -90, max: 120 } }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
   ],
 };
 
-// 3. NEON PONG ARCADE (BARU)
 export const PONG_ARCADE_PRESET: BlockVerseProject = {
   title: 'Neon Pong Arcade',
   stageBackdrop: '#05070d',
@@ -1083,96 +1469,6 @@ export const PONG_ARCADE_PRESET: BlockVerseProject = {
   ],
 };
 
-// 4. TETRIS BLOCK DROP (BARU)
-export const TETRIS_DROP_PRESET: BlockVerseProject = {
-  title: 'Tetris Block Drop',
-  stageBackdrop: '#1e1b4b',
-  stagePattern: 'grid',
-  variables: { score: 0, lines: 0 },
-  broadcasts: ['game over'],
-  sprites: [
-    {
-      id: 'sprite_tetromino',
-      name: 'Tetromino',
-      x: 0,
-      y: 150,
-      size: 110,
-      direction: 90,
-      visible: true,
-      rotationStyle: 'all-around',
-      costumeEmoji: '🧱',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [
-            { op: 'SET_VAR', varName: 'score', value: 0 },
-            { op: 'SET_VAR', varName: 'lines', value: 0 },
-            { op: 'GOTO_XY', x: 0, y: 150 },
-            { op: 'SAY', text: 'Panah Kiri/Kanan Geser, Atas Putar!', seconds: 2 },
-            {
-              op: 'FOREVER',
-              substack: [
-                { op: 'CHANGE_Y', dy: -4 },
-                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowright' }, substack: [{ op: 'CHANGE_X', dx: 8 }] },
-                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowleft' }, substack: [{ op: 'CHANGE_X', dx: -8 }] },
-                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowdown' }, substack: [{ op: 'CHANGE_Y', dy: -6 }] },
-                { op: 'IF', condition: { type: 'KEY_PRESSED', key: 'arrowup' }, substack: [{ op: 'TURN_RIGHT', degrees: 90 }] },
-                {
-                  op: 'IF',
-                  condition: { type: 'TOUCHING', target: 'BaseDock' },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'coin' },
-                    { op: 'CHANGE_VAR', varName: 'score', delta: 25 },
-                    { op: 'CHANGE_VAR', varName: 'lines', delta: 1 },
-                    { op: 'GOTO_XY', x: { type: 'RANDOM', min: -160, max: 160 }, y: 160 },
-                  ],
-                },
-                {
-                  op: 'IF',
-                  condition: { type: 'COMPARE', op: 'LT', a: { type: 'Y_POS' }, b: -165 },
-                  substack: [
-                    { op: 'PLAY_SOUND', sound: 'hit' },
-                    { op: 'SAY', text: 'Meleset dari Dock! Game Over!', seconds: 2 },
-                    { op: 'SUBMIT_SCORE', score: { type: 'VAR', name: 'score' } },
-                    { op: 'STOP_ALL' },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'sprite_basedock',
-      name: 'BaseDock',
-      x: 0,
-      y: -135,
-      size: 135,
-      direction: 90,
-      visible: true,
-      rotationStyle: 'dont-rotate',
-      costumeEmoji: '🟦',
-      scripts: [
-        {
-          trigger: 'WHEN_FLAG_CLICKED',
-          ops: [
-            { op: 'GOTO_XY', x: 0, y: -135 },
-            {
-              op: 'FOREVER',
-              substack: [
-                { op: 'MOVE_STEPS', steps: 4 },
-                { op: 'IF_ON_EDGE_BOUNCE' },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
-
-// 5. BLANK PROJECT
 export const BLANK_STARTER_PROJECT: BlockVerseProject = {
   title: 'My Awesome Game',
   stageBackdrop: '#ffffff',
@@ -1210,7 +1506,6 @@ export const BLANK_STARTER_PROJECT: BlockVerseProject = {
   ],
 };
 
-// 6. COIN HUNTER RPG
 export const COIN_HUNTER_PRESET: BlockVerseProject = {
   title: 'Coin Hunter Adventure',
   stageBackdrop: '#e0f2fe',
@@ -1282,7 +1577,6 @@ export const COIN_HUNTER_PRESET: BlockVerseProject = {
   ],
 };
 
-// 7. SPACE INVADERS
 export const SPACE_INVADERS_PRESET: BlockVerseProject = {
   title: 'Space Invaders',
   stageBackdrop: '#05070d',

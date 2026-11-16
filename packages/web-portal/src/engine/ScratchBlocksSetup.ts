@@ -12,7 +12,7 @@ interface StudioDynamicContext {
 const dynamicContext: StudioDynamicContext = {
   activeSpriteName: 'Hero',
   spriteNames: ['Hero'],
-  variableNames: ['score'],
+  variableNames: ['score', 'lines'],
   broadcastMessages: ['message1', 'game over', 'win'],
 };
 
@@ -24,7 +24,6 @@ export function updateStudioDynamicContext(ctx: Partial<StudioDynamicContext>) {
 }
 
 const getTouchingDropdownOptions = (): [string, string][] => {
-  // Prioritaskan sprite selain diri sendiri agar tidak default "touching Hero?" saat di Hero
   const others = dynamicContext.spriteNames
     .filter((name) => name !== dynamicContext.activeSpriteName)
     .map((name) => [name, name] as [string, string]);
@@ -172,7 +171,7 @@ export function registerScratchBlocks() {
       hat: 'cap',
     },
 
-    // MOTION
+    // MOTION & TETRIS GRID MATRIX BLOCKS
     {
       type: 'motion_movesteps',
       message0: 'move %1 steps',
@@ -275,6 +274,36 @@ export function registerScratchBlocks() {
       output: 'Number',
       colour: '#4C97FF',
     },
+    // --- BLOK KHUSUS MATRIX TETRIS ---
+    {
+      type: 'tetris_step',
+      message0: '🧱 tetris: fall 1 row, stack & clear full lines',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'tetris_move',
+      message0: '🧱 tetris: shift column by %1',
+      args0: [{ type: 'input_value', name: 'DIR', check: 'Number' }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'tetris_rotate',
+      message0: '🧱 tetris: rotate tetromino 90°',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'tetris_hard_drop',
+      message0: '🧱 tetris: hard drop to bottom stack',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
 
     // LOOKS
     {
@@ -320,7 +349,7 @@ export function registerScratchBlocks() {
       colour: '#9966FF',
     },
 
-    // SOUND (Kategori Baru Ungu Magenta #CF63CF)
+    // SOUND
     {
       type: 'sound_play',
       message0: 'play sound %1',
@@ -610,6 +639,10 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     { kind: 'block', type: 'motion_ifonedgebounce' },
     { kind: 'block', type: 'motion_xposition' },
     { kind: 'block', type: 'motion_yposition' },
+    { kind: 'block', type: 'tetris_step' },
+    { kind: 'block', type: 'tetris_move', inputs: { DIR: { shadow: { type: 'math_number', fields: { NUM: 1 } } } } },
+    { kind: 'block', type: 'tetris_rotate' },
+    { kind: 'block', type: 'tetris_hard_drop' },
   ],
   Looks: [
     {
@@ -625,9 +658,7 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     { kind: 'block', type: 'looks_show' },
     { kind: 'block', type: 'looks_hide' },
   ],
-  Sound: [
-    { kind: 'block', type: 'sound_play' },
-  ],
+  Sound: [{ kind: 'block', type: 'sound_play' }],
   Events: [
     { kind: 'block', type: 'event_whenflagclicked' },
     { kind: 'block', type: 'event_whenkeypressed' },
@@ -635,7 +666,7 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     { kind: 'block', type: 'event_broadcast' },
   ],
   Control: [
-    { kind: 'block', type: 'control_wait', inputs: { DURATION: { shadow: { type: 'math_number', fields: { NUM: 1 } } } } },
+    { kind: 'block', type: 'control_wait', inputs: { DURATION: { shadow: { type: 'math_number', fields: { NUM: 0.4 } } } } },
     { kind: 'block', type: 'control_repeat', inputs: { TIMES: { shadow: { type: 'math_number', fields: { NUM: 10 } } } } },
     { kind: 'block', type: 'control_forever' },
     { kind: 'block', type: 'control_if' },
@@ -740,7 +771,6 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
   ],
 };
 
-// Compiler dari Blockly ke AST Runtime
 function compileInputValue(block: Blockly.Block | null): any {
   if (!block) return 0;
   switch (block.type) {
@@ -831,6 +861,18 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
         break;
       case 'motion_ifonedgebounce':
         ops.push({ op: 'IF_ON_EDGE_BOUNCE' });
+        break;
+      case 'tetris_step':
+        ops.push({ op: 'TETRIS_STEP' });
+        break;
+      case 'tetris_move':
+        ops.push({ op: 'TETRIS_MOVE', dir: compileInputValue(current.getInputTargetBlock('DIR')) });
+        break;
+      case 'tetris_rotate':
+        ops.push({ op: 'TETRIS_ROTATE' });
+        break;
+      case 'tetris_hard_drop':
+        ops.push({ op: 'TETRIS_HARD_DROP' });
         break;
       case 'looks_sayforsecs':
         ops.push({
@@ -955,9 +997,6 @@ export function compileWorkspaceToScripts(workspace: Blockly.WorkspaceSvg): Comp
   return compiled;
 }
 
-// ============================================================================
-// DECOMPILER OTOMATIS: Mengubah CompiledScript[] menjadi Blok Visual di Kanvas
-// ============================================================================
 function valueToXml(val: any, isText: boolean = false): string {
   if (val === null || val === undefined) {
     return `<shadow type="math_number"><field name="NUM">0</field></shadow>`;
@@ -1001,6 +1040,12 @@ function opsToXmlChain(ops: CompiledOp[], index: number = 0): string {
   switch (op.op) {
     case 'MOVE_STEPS':
       return `<block type="motion_movesteps"><value name="STEPS">${valueToXml(op.steps)}</value>${nextXml}</block>`;
+    case 'TURN_RIGHT':
+      return `<block type="motion_turnright"><value name="DEGREES">${valueToXml(op.degrees)}</value>${nextXml}</block>`;
+    case 'TURN_LEFT':
+      return `<block type="motion_turnleft"><value name="DEGREES">${valueToXml(op.degrees)}</value>${nextXml}</block>`;
+    case 'POINT_DIRECTION':
+      return `<block type="motion_pointindirection"><value name="DIRECTION">${valueToXml(op.direction)}</value>${nextXml}</block>`;
     case 'GOTO_XY':
       return `<block type="motion_gotoxy"><value name="X">${valueToXml(op.x)}</value><value name="Y">${valueToXml(op.y)}</value>${nextXml}</block>`;
     case 'GOTO_RANDOM':
@@ -1015,6 +1060,14 @@ function opsToXmlChain(ops: CompiledOp[], index: number = 0): string {
       return `<block type="motion_sety"><value name="Y">${valueToXml(op.y)}</value>${nextXml}</block>`;
     case 'IF_ON_EDGE_BOUNCE':
       return `<block type="motion_ifonedgebounce">${nextXml}</block>`;
+    case 'TETRIS_STEP':
+      return `<block type="tetris_step">${nextXml}</block>`;
+    case 'TETRIS_MOVE':
+      return `<block type="tetris_move"><value name="DIR">${valueToXml(op.dir)}</value>${nextXml}</block>`;
+    case 'TETRIS_ROTATE':
+      return `<block type="tetris_rotate">${nextXml}</block>`;
+    case 'TETRIS_HARD_DROP':
+      return `<block type="tetris_hard_drop">${nextXml}</block>`;
     case 'SAY':
       return `<block type="looks_sayforsecs"><value name="MESSAGE">${valueToXml(op.text, true)}</value><value name="SECS">${valueToXml(op.seconds)}</value>${nextXml}</block>`;
     case 'SET_SIZE':
@@ -1055,21 +1108,29 @@ function opsToXmlChain(ops: CompiledOp[], index: number = 0): string {
 export function scriptsToBlocklyXml(scripts: CompiledScript[]): string {
   let blocksXml = '';
   let offsetX = 25;
+  let offsetY = 25;
 
-  for (const script of scripts) {
+  for (let i = 0; i < scripts.length; i++) {
+    const script = scripts[i];
     const chain = opsToXmlChain(script.ops, 0);
     const nextWrap = chain ? `<next>${chain}</next>` : '';
 
     if (script.trigger === 'WHEN_FLAG_CLICKED') {
-      blocksXml += `<block type="event_whenflagclicked" x="${offsetX}" y="25">${nextWrap}</block>`;
+      blocksXml += `<block type="event_whenflagclicked" x="${offsetX}" y="${offsetY}">${nextWrap}</block>`;
     } else if (script.trigger === 'WHEN_KEY_PRESSED') {
-      blocksXml += `<block type="event_whenkeypressed" x="${offsetX}" y="25"><field name="KEY">${script.param || 'space'}</field>${nextWrap}</block>`;
+      blocksXml += `<block type="event_whenkeypressed" x="${offsetX}" y="${offsetY}"><field name="KEY">${script.param || 'space'}</field>${nextWrap}</block>`;
     } else if (script.trigger === 'WHEN_CLONE_START') {
-      blocksXml += `<block type="control_start_as_clone" x="${offsetX}" y="25">${nextWrap}</block>`;
+      blocksXml += `<block type="control_start_as_clone" x="${offsetX}" y="${offsetY}">${nextWrap}</block>`;
     } else if (script.trigger === 'WHEN_RECEIVE') {
-      blocksXml += `<block type="event_whenireceive" x="${offsetX}" y="25"><field name="MESSAGE">${script.param || 'message1'}</field>${nextWrap}</block>`;
+      blocksXml += `<block type="event_whenireceive" x="${offsetX}" y="${offsetY}"><field name="MESSAGE">${script.param || 'message1'}</field>${nextWrap}</block>`;
     }
-    offsetX += 310;
+
+    if (i === 0) {
+      offsetX = 330;
+      offsetY = 25;
+    } else {
+      offsetY += 105;
+    }
   }
 
   return `<xml xmlns="https://developers.google.com/blockly/xml">${blocksXml}</xml>`;
