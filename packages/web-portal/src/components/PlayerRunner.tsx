@@ -10,6 +10,7 @@ import {
   SPACE_INVADERS_PRESET,
   STAR_CATCHER_GAME,
   TETRIS_DROP_PRESET,
+  SNAKE_CLASSIC_PRESET,
 } from '../engine/BlockVerseEngine';
 import { api } from '../services/api';
 
@@ -48,6 +49,8 @@ export const PlayerRunner: React.FC<{ gameId?: string; initialProject?: BlockVer
       setProject(TETRIS_DROP_PRESET);
     } else if (gameId === 'game_cat_star') {
       setProject(STAR_CATCHER_GAME);
+    } else if (gameId === 'game_snake_classic') {
+      setProject(SNAKE_CLASSIC_PRESET);
     } else if (gameId === 'game_coin_hunter') {
       setProject(COIN_HUNTER_PRESET);
     } else if (gameId === 'game_space_invaders' || gameId === '1') {

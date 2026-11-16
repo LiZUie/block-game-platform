@@ -37,6 +37,7 @@ import {
   SpriteTarget,
   STAR_CATCHER_GAME,
   TETRIS_DROP_PRESET,
+  SNAKE_CLASSIC_PRESET,
 } from '../engine/BlockVerseEngine';
 import {
   CATEGORY_BLOCKS,
@@ -250,6 +251,7 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
     if (templateKey === 'flappy') chosen = FLAPPY_BIRD_PRESET;
     if (templateKey === 'pong') chosen = PONG_ARCADE_PRESET;
     if (templateKey === 'tetris') chosen = TETRIS_DROP_PRESET;
+    if (templateKey === 'snake') chosen = SNAKE_CLASSIC_PRESET;
     if (templateKey === 'blank') chosen = BLANK_STARTER_PROJECT;
     if (templateKey === 'coin') chosen = COIN_HUNTER_PRESET;
     if (templateKey === 'space') chosen = SPACE_INVADERS_PRESET;
@@ -436,6 +438,9 @@ export const DeveloperStudio: React.FC<DeveloperStudioProps> = ({
               </option>
               <option value="tetris" className="text-slate-900">
                 🧱 Game: Tetris Block Drop
+              </option>
+              <option value="snake" className="text-slate-900">
+                🐍 Game: Ular Makan Apel (Snake 2D)
               </option>
               <option value="coin" className="text-slate-900">
                 🪙 Game: Coin Hunter RPG

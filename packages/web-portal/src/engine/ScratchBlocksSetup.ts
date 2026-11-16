@@ -319,6 +319,33 @@ export function registerScratchBlocks() {
       nextStatement: null,
       colour: '#4C97FF',
     },
+    // --- BLOK KHUSUS CLASSIC SNAKE 2D ---
+    {
+      type: 'snake_step',
+      message0: '🐍 snake: move forward, eat apple & grow tail',
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
+    {
+      type: 'snake_dir',
+      message0: '🐍 snake: turn direction %1',
+      args0: [
+        {
+          type: 'field_dropdown',
+          name: 'DIR',
+          options: [
+            ['UP (Atas)', 'UP'],
+            ['DOWN (Bawah)', 'DOWN'],
+            ['LEFT (Kiri)', 'LEFT'],
+            ['RIGHT (Kanan)', 'RIGHT'],
+          ],
+        },
+      ],
+      previousStatement: null,
+      nextStatement: null,
+      colour: '#4C97FF',
+    },
 
     // LOOKS
     {
@@ -660,6 +687,8 @@ export const CATEGORY_BLOCKS: Record<string, any[]> = {
     { kind: 'block', type: 'tetris_hard_drop' },
     { kind: 'block', type: 'flappy_step' },
     { kind: 'block', type: 'flappy_flap' },
+    { kind: 'block', type: 'snake_step' },
+    { kind: 'block', type: 'snake_dir' },
   ],
   Looks: [
     {
@@ -897,6 +926,12 @@ function compileStatementChain(startBlock: Blockly.Block | null): CompiledOp[] {
       case 'flappy_flap':
         ops.push({ op: 'FLAPPY_FLAP' });
         break;
+      case 'snake_step':
+        ops.push({ op: 'SNAKE_STEP' });
+        break;
+      case 'snake_dir':
+        ops.push({ op: 'SNAKE_DIR', dir: current.getFieldValue('DIR') });
+        break;
       case 'looks_sayforsecs':
         ops.push({
           op: 'SAY',
@@ -1095,6 +1130,10 @@ function opsToXmlChain(ops: CompiledOp[], index: number = 0): string {
       return `<block type="flappy_step">${nextXml}</block>`;
     case 'FLAPPY_FLAP':
       return `<block type="flappy_flap">${nextXml}</block>`;
+    case 'SNAKE_STEP':
+      return `<block type="snake_step">${nextXml}</block>`;
+    case 'SNAKE_DIR':
+      return `<block type="snake_dir"><field name="DIR">${op.dir || 'RIGHT'}</field>${nextXml}</block>`;
     case 'SAY':
       return `<block type="looks_sayforsecs"><value name="MESSAGE">${valueToXml(op.text, true)}</value><value name="SECS">${valueToXml(op.seconds)}</value>${nextXml}</block>`;
     case 'SET_SIZE':

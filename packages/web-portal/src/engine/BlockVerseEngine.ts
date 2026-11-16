@@ -110,6 +110,22 @@ interface FlappyArcadeState {
   gameOver: boolean;
 }
 
+interface SnakeArcadeState {
+  active: boolean;
+  gridSize: number;
+  cols: number;
+  rows: number;
+  head: { x: number; y: number };
+  trail: { x: number; y: number }[];
+  length: number;
+  dir: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+  nextDir: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+  apple: { x: number; y: number };
+  gameOver: boolean;
+  gameOverReason: string;
+}
+
+
 export function playSynthSound(type: string) {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -180,6 +196,7 @@ export class BlockVerseRuntime {
   private rafId: number | null = null;
   private tetris: TetrisMatrixState | null = null;
   private flappy: FlappyArcadeState | null = null;
+  private snake: SnakeArcadeState | null = null;
   private onScoreSubmit?: (score: number) => void;
   private onStateUpdate?: (vars: Record<string, any>) => void;
   private onSpriteDragged?: (spriteId: string, newX: number, newY: number) => void;
@@ -314,6 +331,200 @@ export class BlockVerseRuntime {
       )
     );
   }
+
+  private hasSnakeBlocks(): boolean {
+    return (
+      this.project.title.toLowerCase().includes('ular') ||
+      this.project.title.toLowerCase().includes('snake') ||
+      this.project.sprites.some((sp) =>
+        sp.scripts.some((sc) => JSON.stringify(sc.ops).includes('SNAKE_'))
+      )
+    );
+  }
+
+  private initSnakeArcade() {
+    const gridSize = 20;
+    const cols = 24; // 24 * 20 = 480px
+    const rows = 18; // 18 * 20 = 360px
+    this.snake = {
+      active: true,
+      gridSize,
+      cols,
+      rows,
+      head: { x: 10, y: 9 },
+      trail: [
+        { x: 9, y: 9 },
+        { x: 8, y: 9 },
+        { x: 7, y: 9 },
+      ],
+      length: 3,
+      dir: 'RIGHT',
+      nextDir: 'RIGHT',
+      apple: { x: 16, y: 9 },
+      gameOver: false,
+      gameOverReason: '',
+    };
+  }
+
+  private setSnakeDirection(newDir: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT') {
+    if (!this.snake || this.snake.gameOver) return;
+    const cur = this.snake.dir;
+    if (cur === 'UP' && newDir === 'DOWN') return;
+    if (cur === 'DOWN' && newDir === 'UP') return;
+    if (cur === 'LEFT' && newDir === 'RIGHT') return;
+    if (cur === 'RIGHT' && newDir === 'LEFT') return;
+    this.snake.nextDir = newDir;
+  }
+
+  private stepSnakeArcade() {
+    if (!this.snake || this.snake.gameOver) return;
+    const s = this.snake;
+    s.dir = s.nextDir;
+
+    // Simpan posisi kepala sebelumnya ke ekor (trail)
+    s.trail.unshift({ x: s.head.x, y: s.head.y });
+    while (s.trail.length > s.length) {
+      s.trail.pop();
+    }
+
+    if (s.dir === 'UP') s.head.y -= 1;
+    else if (s.dir === 'DOWN') s.head.y += 1;
+    else if (s.dir === 'LEFT') s.head.x -= 1;
+    else if (s.dir === 'RIGHT') s.head.x += 1;
+
+    // 1. Cek Tabrak Dinding Panggung
+    if (s.head.x < 0 || s.head.x >= s.cols || s.head.y < 0 || s.head.y >= s.rows) {
+      s.gameOver = true;
+      s.gameOverReason = 'Menabrak Dinding!';
+      playSynthSound('hit');
+      if (this.onScoreSubmit) this.onScoreSubmit(Number(this.variables['score'] || 0));
+      this.stop();
+      return;
+    }
+
+    // 2. Cek Tabrak Tubuh Sendiri
+    if (s.trail.some((seg) => seg.x === s.head.x && seg.y === s.head.y)) {
+      s.gameOver = true;
+      s.gameOverReason = 'Menabrak Ekor Sendiri!';
+      playSynthSound('hit');
+      if (this.onScoreSubmit) this.onScoreSubmit(Number(this.variables['score'] || 0));
+      this.stop();
+      return;
+    }
+
+    // 3. Cek Makan Apel Merah
+    if (s.head.x === s.apple.x && s.head.y === s.apple.y) {
+      playSynthSound('coin');
+      s.length += 1;
+      this.variables['score'] = Number(this.variables['score'] || 0) + 10;
+      this.variables['panjang'] = s.length;
+
+      // Munculkan Apel di koordinat grid acak yang tidak menimpa badan ular
+      let ax = 0;
+      let ay = 0;
+      let busy = true;
+      while (busy) {
+        ax = Math.floor(Math.random() * (s.cols - 2)) + 1;
+        ay = Math.floor(Math.random() * (s.rows - 2)) + 1;
+        busy =
+          (ax === s.head.x && ay === s.head.y) ||
+          s.trail.some((seg) => seg.x === ax && seg.y === ay);
+      }
+      s.apple = { x: ax, y: ay };
+    }
+  }
+
+  private renderSnakeArcade() {
+    if (!this.snake) return;
+    const { ctx } = this;
+    const s = this.snake;
+    const g = s.gridSize;
+
+    // 1. Latar Grid Gelap Klasik
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 480, 360);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= 480; x += g) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 360);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= 360; y += g) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(480, y);
+      ctx.stroke();
+    }
+
+    // 2. Gambar Apel Merah + Daun Hijau
+    const ax = s.apple.x * g;
+    const ay = s.apple.y * g;
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(ax + g / 2, ay + g / 2 + 1, g / 2 - 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(ax + g / 2 - 1, ay + 1, 3, 4);
+
+    // 3. Gambar Segmen Ekor Ular
+    for (let i = 0; i < s.trail.length; i++) {
+      const seg = s.trail[i];
+      const alpha = Math.max(0.45, 1 - (i / (s.trail.length + 2)) * 0.5);
+      ctx.fillStyle = `rgba(16, 185, 129, ${alpha})`;
+      ctx.beginPath();
+      ctx.roundRect(seg.x * g + 1, seg.y * g + 1, g - 2, g - 2, 4);
+      ctx.fill();
+    }
+
+    // 4. Gambar Kepala Ular + Mata Mengikuti Arah Gerak
+    const hx = s.head.x * g;
+    const hy = s.head.y * g;
+    ctx.fillStyle = '#34d399';
+    ctx.beginPath();
+    ctx.roundRect(hx + 1, hy + 1, g - 2, g - 2, 5);
+    ctx.fill();
+
+    ctx.fillStyle = '#064e3b';
+    if (s.dir === 'RIGHT') {
+      ctx.fillRect(hx + g - 6, hy + 4, 3, 3);
+      ctx.fillRect(hx + g - 6, hy + g - 7, 3, 3);
+    } else if (s.dir === 'LEFT') {
+      ctx.fillRect(hx + 3, hy + 4, 3, 3);
+      ctx.fillRect(hx + 3, hy + g - 7, 3, 3);
+    } else if (s.dir === 'UP') {
+      ctx.fillRect(hx + 4, hy + 3, 3, 3);
+      ctx.fillRect(hx + g - 7, hy + 3, 3, 3);
+    } else {
+      ctx.fillRect(hx + 4, hy + g - 6, 3, 3);
+      ctx.fillRect(hx + g - 7, hy + g - 6, 3, 3);
+    }
+
+    if (s.gameOver) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.beginPath();
+      ctx.roundRect(110, 110, 260, 115, 14);
+      ctx.fill();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', 240, 145);
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '13px sans-serif';
+      ctx.fillText(s.gameOverReason, 240, 170);
+
+      ctx.fillStyle = '#34d399';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(`Skor Akhir: ${this.variables['score'] || 0}`, 240, 195);
+    }
+  }
+
 
   // ================== INISIALISASI & LOGIKA FLAPPY BIRD ASLI ==================
   private initFlappyArcade() {
@@ -525,12 +736,19 @@ export class BlockVerseRuntime {
     if (this.hasTetrisBlocks()) {
       this.initTetrisMatrix();
       this.flappy = null;
+      this.snake = null;
     } else if (this.hasFlappyBlocks()) {
       this.initFlappyArcade();
       this.tetris = null;
+      this.snake = null;
+    } else if (this.hasSnakeBlocks()) {
+      this.initSnakeArcade();
+      this.tetris = null;
+      this.flappy = null;
     } else {
       this.tetris = null;
       this.flappy = null;
+      this.snake = null;
     }
   }
 
@@ -742,6 +960,14 @@ export class BlockVerseRuntime {
             break;
           case 'FLAPPY_FLAP':
             this.flapBirdUpward();
+            break;
+
+          // ================== EKSEKUSI BLOK SNAKE 2D ==================
+          case 'SNAKE_STEP':
+            this.stepSnakeArcade();
+            break;
+          case 'SNAKE_DIR':
+            this.setSnakeDirection(op.dir || 'RIGHT');
             break;
 
           // ================== EKSEKUSI BLOK MATRIX TETRIS ==================
@@ -1535,6 +1761,8 @@ export class BlockVerseRuntime {
       this.renderTetrisBoard();
     } else if (this.flappy && this.flappy.active) {
       this.renderFlappyArcade();
+    } else if (this.snake && this.snake.active) {
+      this.renderSnakeArcade();
     } else {
       for (const entity of this.entities) {
         if (!entity.visible) continue;
@@ -2173,6 +2401,75 @@ export const SPACE_INVADERS_PRESET: BlockVerseProject = {
           ],
         },
       ],
+    },
+  ],
+};
+
+export const SNAKE_CLASSIC_PRESET: BlockVerseProject = {
+  title: 'Ular Makan Apel (Classic Snake 2D)',
+  stageBackdrop: '#0f172a',
+  stagePattern: 'grid',
+  variables: { score: 0, panjang: 3 },
+  broadcasts: ['game over'],
+  sprites: [
+    {
+      id: 'sprite_snake',
+      name: 'Ular',
+      x: -40,
+      y: 0,
+      size: 100,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🐍',
+      scripts: [
+        {
+          trigger: 'WHEN_FLAG_CLICKED',
+          ops: [
+            { op: 'SET_VAR', varName: 'score', value: 0 },
+            { op: 'SET_VAR', varName: 'panjang', value: 3 },
+            {
+              op: 'FOREVER',
+              substack: [
+                { op: 'WAIT', seconds: 0.13 },
+                { op: 'SNAKE_STEP' },
+              ],
+            },
+          ],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowup',
+          ops: [{ op: 'SNAKE_DIR', dir: 'UP' }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowdown',
+          ops: [{ op: 'SNAKE_DIR', dir: 'DOWN' }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowleft',
+          ops: [{ op: 'SNAKE_DIR', dir: 'LEFT' }],
+        },
+        {
+          trigger: 'WHEN_KEY_PRESSED',
+          param: 'arrowright',
+          ops: [{ op: 'SNAKE_DIR', dir: 'RIGHT' }],
+        },
+      ],
+    },
+    {
+      id: 'sprite_apple',
+      name: 'Apel',
+      x: 80,
+      y: 0,
+      size: 100,
+      direction: 90,
+      visible: true,
+      rotationStyle: 'dont-rotate',
+      costumeEmoji: '🍎',
+      scripts: [],
     },
   ],
 };
